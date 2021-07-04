@@ -1,0 +1,38 @@
+# Накидываю пример синтаксиса, чтобы начать пилить AST
+
+main : -{io}-> () = println "Hello world!"
+
+addTwo : Int -> Int =
+    x -> x + 2
+
+sum : List Int -> Int =
+    [] -> 0
+    (x::xs) -> x + sum xs
+
+imperative : Int -{io}-> () =
+    0 -> println "Zero, nothing to do here"
+    x ->
+        let y: File = open "input.txt"
+        let y' = write y `{x}`
+        close y'
+
+data Optional a = Just a | Nothing
+
+# Пишите комментарии, буду пытаться объяснять происходящее
+
+effect Ask = Ask -> Int
+
+ask_example (x: Int) * (y: Int) =
+    let list = [x, y]
+    handle
+        asks()
+    with =
+        Ask cont -> cont pop(list)
+
+# handle_with_ : ...
+
+asks : -{Ask}-> Int = raise Ask + raise Ask
+
+if_then_else_ : Bool * ((-> a) & (-> a)) -> a =
+    true * (f &) -> f()
+    false * (& f) -> f()

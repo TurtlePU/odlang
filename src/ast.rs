@@ -1,103 +1,103 @@
-pub type Program = Vec<Decl>;
+pub type Program<T, N> = Vec<Binding<T, N>>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Name(pub String);
-
-impl<'a> From<&'a str> for Name {
-    fn from(x: &'a str) -> Self {
-        Self(x.into())
-    }
+#[derive(Debug)]
+pub struct Binding<T, N> {
+    pub name: N,
+    pub value: TLValue<T, N>,
 }
 
 #[derive(Debug)]
-pub struct Binding {
-    pub name: Name,
-    pub expr: Expr,
+pub enum TLValue<T, N> {
+    Expr(ValExpr<T, N>),
+    Data(PureFun<TLParam<N>, Data<T, N>>),
 }
 
 #[derive(Debug)]
-pub struct CompTime {
-    pub name: Name,
-    pub typevars: Vec<String>,
-    pub body: Body,
+pub struct PureFun<F, T> {
+    pub from: Vec<F>,
+    pub to: T,
 }
 
 #[derive(Debug)]
-pub enum Decl {
-    TopLevelValue(Binding),
-    CompTime(CompTime),
+pub enum TLParam<N> {
+    TypeVar(N),
 }
 
 #[derive(Debug)]
-pub struct Expr {
-    pub expr_type: Type,
-    pub expr_value: Value
+pub struct GenExpr<T, V> {
+    pub type_: T,
+    pub value: V,
 }
 
-#[derive(Debug)]
-pub enum Tuple<T> {
-    Mult(Vec<T>),
-    Add(Vec<T>),
-}
+pub type ValExpr<T, N> = GenExpr<Type<T, N>, Value<T, N>>;
 
 #[derive(Debug)]
-pub enum Type {
-    Hole(String),
-    Nominal(Name),
-    Tuple(Tuple<Type>),
-    Arrow {
-        from: Box<Type>,
-        to: Box<Type>,
-        effects: Vec<Type>,
+pub enum Type<T, N> {
+    Named(T),
+    Apply(Apply<Type<T, N>>),
+    Tuple(Tuple<Type<T, N>>),
+    TypeFun(PureFun<TLParam<N>, Box<Type<T, N>>>),
+    ValueFun {
+        from: Tuple<Type<T, N>>,
+        to: Box<Type<T, N>>,
+        effects: Vec<Type<T, N>>,
     },
 }
 
 #[derive(Debug)]
-pub enum Value {
-    Variable(Name),
-    Tuple(Tuple<Expr>),
-    Function(Function),
-    Call(Call),
-    Block(Vec<Stmt>),
+pub struct Apply<T> {
+    pub func: Box<T>,
+    pub args: Vec<T>,
 }
 
 #[derive(Debug)]
-pub enum Stmt {
-    Expression(Expr),
-    Binding(Binding),
+pub struct Tuple<T> {
+    pub kind: TupleKind,
+    pub coords: Vec<T>,
 }
 
 #[derive(Debug)]
-pub struct Function(pub Vec<Branch>);
-
-#[derive(Debug)]
-pub struct Call {
-    pub function: Box<Expr>,
-    pub args: Vec<Expr>,
+pub enum TupleKind {
+    Multiplicative,
+    Additive,
 }
 
 #[derive(Debug)]
-pub struct Branch {
-    pub pattern: Pattern,
-    pub expression: Expr,
-    pub effects: Vec<Type>,
-}
-
-pub type Pattern = Expr;
-
-#[derive(Debug)]
-pub enum Body {
-    Data {
-        variants: Vec<Variant>,
-    },
-    Effect {
-        variants: Vec<Variant>,
-        value: Option<Type>,
-    },
+pub enum Value<T, N> {
+    Variable(N),
+    Tuple(Tuple<ValExpr<T, N>>),
+    Lambda(Vec<Branch<T, N>>),
+    Apply(Apply<ValExpr<T, N>>),
+    Block(Vec<Stmt<T, N>>),
 }
 
 #[derive(Debug)]
-pub struct Variant {
-    pub name: Name,
-    pub tuple: Tuple<Type>,
+pub enum Stmt<T, N> {
+    Just(ValExpr<T, N>),
+    Raise(ValExpr<T, N>),
+    Bind(Binding<T, N>),
+}
+
+#[derive(Debug)]
+pub struct Branch<T, N>(pub PatExpr<T, N>, pub ValExpr<T, N>);
+
+pub type PatExpr<T, N> = GenExpr<Type<T, N>, Pattern<T, N>>;
+
+#[derive(Debug)]
+pub enum Pattern<T, N> {
+    Variable(N),
+    Tuple(Tuple<PatExpr<T, N>>),
+    Apply(Apply<PatExpr<T, N>>),
+}
+
+#[derive(Debug)]
+pub struct Data<T, N> {
+    pub variants: Vec<(Content<N>, Type<T, N>)>,
+    pub effect: Option<Type<N, N>>,
+}
+
+#[derive(Debug)]
+pub enum Content<N> {
+    Variant(N, Tuple<Type<N, N>>),
+    Other(Apply<Type<N, N>>),
 }

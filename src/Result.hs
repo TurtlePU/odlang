@@ -2,10 +2,15 @@
 
 module Result where
 
-import Control.Monad
-import Data.Fix
+import Control.Applicative (Alternative (..), Applicative (..))
+import Control.Monad (Monad (..), (>=>))
+import Data.Bifunctor (Bifunctor (..))
+import Data.Fix (Fix (..), foldFix, wrapFix)
 
 data Result e a = Ok a | Err e deriving (Functor)
+
+instance Bifunctor Result where
+  bimap f g = result (Err . f) (Ok . g)
 
 instance Semigroup e => Applicative (Result e) where
   pure = Ok
@@ -19,6 +24,17 @@ instance Semigroup e => Monad (Result e) where
   Ok x >>= f = f x
   Err e >>= f = Err e
 
+instance Monoid e => Alternative (Result e) where
+  empty = Err mempty
+
+  Ok x <|> _ = Ok x
+  _ <|> Ok x = Ok x
+  Err l <|> Err r = Err $ l <> r
+
+result :: (a -> c) -> (b -> c) -> Result a b -> c
+result f _ (Err x) = f x
+result _ f (Ok x) = f x
+
 newtype Res e f a = Res {unres :: Result e (f a)} deriving (Functor)
 
 res :: Result e (f a) -> Res e f a
@@ -31,4 +47,4 @@ err :: e -> Res e f a
 err = res . Err
 
 sift :: (Semigroup e, Traversable f) => Fix (Res e f) -> Result e (Fix f)
-sift = foldFix $ fmap wrapFix . sequenceA <=< unres
+sift = foldFix $ unres >=> fmap wrapFix . sequenceA

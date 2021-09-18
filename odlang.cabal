@@ -27,7 +27,9 @@ library
   exposed-modules:
       HashMultiMap
       Lib
+      Parser.Lexer
       Result
+      Tree
   other-modules:
       Paths_odlang
   hs-source-dirs:
@@ -35,6 +37,10 @@ library
   build-depends:
       base >=4.7 && <5
     , data-fix
+    , hashable
+    , megaparsec
+    , text
+    , unordered-containers
   default-language: Haskell2010
 
 executable odlang-exe
@@ -47,7 +53,11 @@ executable odlang-exe
   build-depends:
       base >=4.7 && <5
     , data-fix
+    , hashable
+    , megaparsec
     , odlang
+    , text
+    , unordered-containers
   default-language: Haskell2010
 
 test-suite odlang-test
@@ -61,5 +71,9 @@ test-suite odlang-test
   build-depends:
       base >=4.7 && <5
     , data-fix
+    , hashable
+    , megaparsec
     , odlang
+    , text
+    , unordered-containers
   default-language: Haskell2010

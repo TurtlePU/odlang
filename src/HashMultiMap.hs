@@ -7,7 +7,7 @@ import Result (Res, err)
 newtype HashMultiMap k v = HashMultiMap {unMulti :: HashMap k [v]}
 
 multi :: HashMap k [v] -> HashMultiMap k v
-multi map = HashMultiMap {unMulti = map}
+multi hashMap = HashMultiMap {unMulti = hashMap}
 
 one :: Hashable k => k -> v -> Res (HashMultiMap k v) f a
 one k = err . multi . singleton k . pure

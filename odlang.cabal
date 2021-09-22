@@ -27,6 +27,7 @@ library
   exposed-modules:
       HashMultiMap
       Lib
+      NonSingle
       Parser.Lexer
       Result
       Tree

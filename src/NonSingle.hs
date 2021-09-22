@@ -2,12 +2,20 @@
 
 module NonSingle where
 
+import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty)
 import GHC.Exts (IsList (..))
 
 infixr 5 :||
 
 data NonSingle a = a :|| NonEmpty a
+
+instance Show a => Show (NonSingle a) where
+  show (x :|| y :| []) = "[" ++ show x ++ ", " ++ show y ++ "]"
+  show (x :|| y :| z) =
+    "[" ++ show x ++ ", " ++ show y ++ ", "
+      ++ intercalate ", " (map show z)
+      ++ "]"
 
 instance IsList (NonSingle a) where
   type Item (NonSingle a) = a

@@ -21,11 +21,10 @@ description:         Please see the README on GitHub at <https://github.com/Turt
 
 dependencies:
 - base >= 4.7 && < 5
-- data-fix
-- unordered-containers
-- hashable
 - text
 - megaparsec
+- unordered-containers
+- hashable
 
 library:
   source-dirs: src

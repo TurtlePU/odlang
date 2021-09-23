@@ -15,15 +15,15 @@ import Text.Megaparsec hiding (Stream)
 import qualified Text.Megaparsec.Char.Lexer as L
 
 data TokenTree
-  = TokWord Stream
-  | TokInside ParenKind (Maybe TokenTree)
-  | TokConcat Separator (NonSingle TokenTree)
+  = TokWord Position Chunk
+  | TokInside Position ParenKind (Maybe TokenTree)
+  | TokConcat Position Separator (NonSingle TokenTree)
 
 instance Show TokenTree where
-  show (TokWord w) = show w
-  show (TokInside k Nothing) = show k
-  show (TokInside k (Just t)) = "TokInside " ++ show k ++ " " ++ show t
-  show (TokConcat s ts) = "TokConcat " ++ show s ++ " " ++ show ts
+  show (TokWord _ w) = show w
+  show (TokInside _ k Nothing) = show k
+  show (TokInside _ k (Just t)) = "TokInside " ++ show k ++ " " ++ show t
+  show (TokConcat _ s ts) = "TokConcat " ++ show s ++ " " ++ show ts
 
 data ParenKind = Paren | Bracket
 
@@ -36,6 +36,10 @@ data Separator = Space | None
 instance Show Separator where
   show Space = show ' '
   show None = show ""
+
+type Position = Int
+
+type Chunk = Text
 
 type Stream = Text
 
@@ -52,16 +56,17 @@ testLexer = parseTest lexer
 lexer :: Lexer (Maybe TokenTree)
 lexer = between scn eof expr
   where
-    expr = tokConcat Space <$> together `sepEndBy` scn
-    together = tokConcat1 None <$> liftA2 (:|) callee (many inParens)
-    callee = TokWord <$> (latinName <|> operatorName) <|> inParens
+    expr = tokConcat Space <$> getOffset <*> together `sepEndBy` scn
+    together = tokConcat1 None <$> getOffset <*> togetherBody
+    togetherBody = (:|) <$> callee <*> many inParens
+    callee = TokWord <$> getOffset <*> (latinName <|> operatorName) <|> inParens
     latinName =
       (lookAhead (satisfy latinStart) <?> "ident start")
         *> takeWhile1P (Just "ident symbol") latinContent
     latinStart c = isAlpha c || c == '_'
     latinContent c = isAlphaNum c || c == '_'
     operatorName = someOf "operator symbol" "!#$%&*+.,;/<=>?@\\^|-~:"
-    inParens = uncurry TokInside <$> (btw Paren <|> btw Bracket)
+    inParens = uncurry . TokInside <$> getOffset <*> (btw Paren <|> btw Bracket)
     btw p = (p,) <$> between (single (op p) *> scn) (scn <* single (cl p)) expr
     scn = L.space (void $ someOf "whitespace" " \r\n") lineComment blockComment
     lineComment = empty
@@ -77,8 +82,8 @@ cl :: ParenKind -> Char
 cl Bracket = ']'
 cl Paren = ')'
 
-tokConcat :: Separator -> [TokenTree] -> Maybe TokenTree
-tokConcat s = fmap (tokConcat1 s) . nonEmpty
+tokConcat :: Separator -> Position -> [TokenTree] -> Maybe TokenTree
+tokConcat s p = fmap (tokConcat1 s p) . nonEmpty
 
-tokConcat1 :: Separator -> NonEmpty TokenTree -> TokenTree
-tokConcat1 s = either id (TokConcat s) . fromNonEmpty
+tokConcat1 :: Separator -> Position -> NonEmpty TokenTree -> TokenTree
+tokConcat1 s p = either id (TokConcat p s) . fromNonEmpty

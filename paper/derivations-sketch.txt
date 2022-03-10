@@ -1,0 +1,330 @@
+I. KINDS
+
+Ia. SIMPLE KINDS
+
+--------------- PreSK
+ pretype skind
+
+------------ TySK
+ type skind
+
+ k, k' skind
+-------------- PairSK
+ k x k' skind
+
+Ib. PROPER KINDS
+
+----------- MultK
+ mult kind
+
+-------------- EffK
+ effect kind
+
+----------- RowK
+ row kind
+
+ k skind
+--------- SK<=K
+ k kind
+
+  k, k' kind
+-------------- ArrK
+ k -> k' kind
+
+Ic. KIND EQUIVALENCE
+
+Structural & trivial.
+
+II. TYPELEVEL COMPUTATIONS
+
+II.a. TYPELEVEL CONTEXT
+
+K is a context supporting Exchange, Weakening and Contraction.
+
+II.b. TYPELEVEL OPERATORS
+
+       k kind
+--------------------- KVar
+ K, a :: k |- a :: k
+
+ k, k' kind   K |- x :: k   K |- t :: k -> k'
+---------------------------------------------- KApp
+                K |- t x :: k'
+
+ k, k' kind    K, a :: k |- b :: k'
+------------------------------------ KAbs
+    K |- (a :: k . b) :: k -> k'
+
+ K |- a :: k    K |- b :: k'
+----------------------------- KPair
+    K |- <a, b> :: k x k'
+
+ K |- p :: k x k'
+------------------ KFst
+ K |- fst p :: k
+
+ K |- p :: k x k'
+------------------ KSnd
+ K |- snd p :: k'
+
+ k skind   K, a :: k |- b :: k
+------------------------------- KFix
+   K |- (Mu a :: k . b) :: k
+
+II.c. TYPELEVEL EQUIVALENCE
+
+Things of different kinds cannot be equal.
+Equivalences inside each atomic kind are elaborated further.
+
+ a appears in K
+---------------- =Var-Refl
+   K |- a = a
+
+ K |- a = c    K |- b = d
+-------------------------- =Pair-Ext
+   K |- <a, b> = <c, d>
+
+--------------------- =Fst-Eval
+ K |- fst <a, b> = a
+
+--------------------- =Snd-Eval
+ K |- snd <a, b> = b
+
+       K, x :: k |- a = b
+-------------------------------- =Forall-Ext
+ K |- (x :: k. a) = (x :: k. b)
+
+-------------------------------- =App-Eval
+ K |- (x :: k. b) a = {a / x} b
+
+III. MULTIPLICITIES
+
+III.a. MULTIPLICITY INTRODUCTION
+
+------------- M!
+ K |- ! mult
+
+------------- M?
+ K |- ? mult
+
+------------- M+
+ K |- + mult
+
+------------- M*
+ K |- * mult
+
+ K |- a mult  K |- b mult
+-------------------------- MJoin
+     K |- a \/ b mult
+
+ K |- a mult  K |- b mult
+-------------------------- MMeet
+     K |- a /\ b mult
+
+III.b. MULTIPLICITY EQUIVALENCE
+
+Decidable in quadratic time: each multiplicity can be represented as pair of
+booleans: (forbid_weakening, forbid_contraction). Joins and meets are performed
+component-wise, therefore it is enough to check equivalence of two monotonic
+boolean formulas.
+
+(phi = psi) <=> (phi -> psi) and (psi -> phi), therefore we have to solve '->'.
+
+r -> (p \/ q) <=> r -> p \/ r -> q;
+r -> (p /\ q) <=> r -> p /\ r -> q;
+(p \/ q) -> r <=> p -> r /\ q -> r;
+(p /\ q) -> r <=> p -> r \/ q -> r;
+checking 'a -> b' where a, b are constants and/or variables is trivial.
+
+IV. TYPES
+
+IVa. PROPER TYPES
+
+ K |- T pretype  K |- m mult
+----------------------------- Type
+        K |- T %m type
+
+IVb. PRETYPES
+
+ K |- A type   K |- B type
+--------------------------- PArr
+    K |- A -> B pretype
+
+     K, x :: k |- A type
+----------------------------- PForall
+ K |- (Pi x :: k. A) pretype
+
+     K |- r row
+--------------------- PAndRow
+ K |- (...r) pretype
+
+     K |- r row
+--------------------- PWithRow
+ K |- [...r] pretype
+
+     K |- r row
+--------------------- POrRow
+ K |- |...r| pretype
+
+ K |- e effect    K |- A type
+------------------------------ PEff
+    K |- e |= A pretype
+
+IVc. TYPE EQUIVALENCE
+
+TODO: see paper (difficulties arise because of equirecursive types).
+
+TODO: write out formally the following:
+
+'e |= A' is equal to 'Mu t. |...r(t)|', where r is a row type generated from
+effect entry-by-signature.
+
+V. EFFECTS
+
+Va. EFFECTS AS LISTS
+
+---------------- EffNil
+ K |- {} effect
+
+ K |- s signature   K |- e effect
+---------------------------------- EffCons
+        K |- {s; e} effect
+
+   K |- e, e' effect
+------------------------ EffJoin
+ K |- {...e; e'} effect
+
+Vb. EFFECT SUBTYPING (EFFECTS AS SETS)
+
+<=Eff is a reflexive, transitive closure of the following relation:
+
+  K |- s, s' signature    K |- e, e' effect
+--------------------------------------------- <=Eff-Exchange
+ K |- {...e; s; s'; e'} <= {...e; s'; s; e'}
+
+ K |- s signature   K |- e effect
+---------------------------------- <=Eff-Weakening
+         K |- e <= {s; e}
+
+ K |- s signature   K |- e effect
+---------------------------------- <=Eff-Contraction
+     K |- {s; s; e} <= {s; e}
+
+Vc. EFFECT EQUIVALENCE
+
+ K |- e <=Eff e'   K |- e' <=Eff e
+----------------------------------- =Eff-Ext
+            K |- e = e'
+
+TODO: equivalence under Mu.
+
+Vd. EFFECT SIGNATURES
+
+ K |- t, t' type    K |- m mult
+-------------------------------- SigIntro
+   K |- t -(m)-> t' signature
+
+VI. ROWS
+
+VIa. ROWS AS ASSOCIATIVE LISTS
+
+------------- RowNil
+ K |- {} row
+
+ K |- e entry   K |- r row   K |- key(e) not in r
+-------------------------------------------------- RowCons
+               K |- {e; r} row
+
+ K |- r, r' row   keys(r) /\ keys(r') = {}
+------------------------------------------- RowJoin
+            K |- {...r; r'} row
+
+ K |- r, r' row
+----------------- RowSub
+ K |- r \ r' row
+
+VIb. ROW EQUIVALENCE
+
+Rows are equivalent if they are equal as maps from field names into field types.
+Equality of rows under polymorphism is decidable in super-exponential time.
+
+VIc. ROW ENTRIES
+
+ K |- t type  n name
+--------------------- EntryIntro
+ K |- (.n : t) entry
+
+VII. TERM LEVEL STATICS
+
+VII.a. TERM CONTEXT
+
+Term context Г is a list of pairs (variable, type) which admits the following:
+
+ K; G, x:t, y:u, D |- e:T
+-------------------------- G-Exchange
+ K; G, y:u, x:t, D |- e:T
+
+ m<=?   K; G |- e:T
+-------------------- G-Weakening
+ K; x:t%m, G |- e:T
+
+ m<=+   K; x:t%m, x:t%m, G |- e:T
+---------------------------------- G-Contraction
+        K; x:t%m, G |- e:T
+
+VII.b. TERMS
+
+--------------- TVar
+ K; x:T |- x:T
+
+ K; G, x:T |- e:U   K |- sup g <= m
+------------------------------------ TAbs
+   K; G |- (\x. e) : (T -> U) % m
+
+ K; G |- f : (T -> U) %m   K; D |- x : T
+----------------------------------------- TApp
+           K; G, D |- f x : U
+
+       a :: k, K; G |- x : t
+----------------------------------- TGen
+  K; G |- (pi a. x) : Pi a :: k. t
+
+ K; G |- f : Pi a :: k. t   K |- d :: k
+---------------------------------------- TInst
+            K; G |- f @d : t
+
+TODO: spreads (not too hard, but requires elaboration)
+
+  for i=1..n (K; Gi |- i : ti % mi)    K |- sup mi <= m
+--------------------------------------------------------- TAndI
+ K; G1,...,Gn |- (1,...,n) : (.1:t1%m1,...,.n:tn%mn) % m
+
+ K; G |- a : (...r) %m   K; D,...r |- e : t
+-------------------------------------------- TAndE
+   K; G, D |- let (1,...,n) = a in e : t
+
+ for i=1..n (K; G |- i : ti % mi)   K |- sup mi <= m
+----------------------------------------------------- TWithI
+   K; G |- [1,...,n] : [.1:t1%m1,...,.n:tn%mn] % m
+
+ K; G |- w : [...r] %m   n in keys(r)
+-------------------------------------- TWithE
+          K; G |- w.n : r(n)
+
+ K; G |- x : t%n   K |- n <= m   n in keys(r)
+---------------------------------------------- TOrI
+          K; G |- .n i : |...r| % m
+
+ K; G |- o : |...r| %m   for i=1..n (K; x : r(i), D |- ei : t)
+--------------------------------------------------------------- TOrE
+             K; G, D |- case o of (.i x := ei) : t
+
+VIII. OPERATIONAL SEMANTICS
+
+VIII.a. MUTABLE STATE
+
+TODO
+
+VIII.b. SMALL-STEP
+
+TODO

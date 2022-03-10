@@ -3,10 +3,7 @@ module HashMultiMap where
 import Data.HashMap.Strict (HashMap, singleton, unionWith)
 import Data.Hashable (Hashable)
 
-newtype HashMultiMap k v = HashMultiMap {unMulti :: HashMap k [v]}
+newtype HashMultiMap k v = Multi {unMulti :: HashMap k v}
 
-multi :: HashMap k [v] -> HashMultiMap k v
-multi hashMap = HashMultiMap {unMulti = hashMap}
-
-instance (Eq k, Hashable k) => Semigroup (HashMultiMap k v) where
-  l <> r = multi $ unionWith (<>) (unMulti l) (unMulti r)
+instance (Eq k, Hashable k, Semigroup v) => Semigroup (HashMultiMap k v) where
+  l <> r = Multi $ unionWith (<>) (unMulti l) (unMulti r)

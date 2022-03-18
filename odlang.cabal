@@ -30,6 +30,7 @@ library
       HashMultiMap
       Lib
       Parser
+      Position
       Result
       Tree
   other-modules:

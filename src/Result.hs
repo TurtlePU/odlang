@@ -33,3 +33,22 @@ instance Monoid e => Alternative (Result e) where
 result :: (a -> c) -> (b -> c) -> Result a b -> c
 result f _ (Err x) = f x
 result _ f (Ok x) = f x
+
+newtype CtxResult s e a = CtxR { withCtx :: s -> Result e a } deriving (Functor)
+
+instance Bifunctor (CtxResult s) where
+  bimap f g x = CtxR $ bimap f g . withCtx x
+
+instance Semigroup e => Applicative (CtxResult s e) where
+  pure = CtxR . pure . pure
+  f <*> x = CtxR $ (<*>) <$> withCtx f <*> withCtx x
+
+instance Semigroup e => Monad (CtxResult s e) where
+  x >>= f = CtxR $ (>>=) <$> withCtx x <*> ((. f) . flip withCtx)
+
+instance Monoid e => Alternative (CtxResult s e) where
+  empty = CtxR $ pure empty
+  l <|> r = CtxR $ (<|>) <$> withCtx l <*> withCtx r
+
+mapCtx :: (s -> s') -> CtxResult s' e a -> CtxResult s e a
+mapCtx f x = CtxR $ withCtx x . f

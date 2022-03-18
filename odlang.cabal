@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Core.Kind
+      Core.Term
       Core.TypeLevel
       HashMultiMap
       Lib

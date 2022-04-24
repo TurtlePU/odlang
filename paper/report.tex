@@ -1,0 +1,572 @@
+\documentclass[a4paper,14pt]{extreport}
+
+\usepackage[a4paper, left=2.5cm, right=2cm, top=2cm, bottom=2cm]{geometry}
+
+\usepackage{cmap}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{mathpartir}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{ragged2e}
+\usepackage{indentfirst}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[english]{babel}
+
+\justifying
+\linespread{1.3}
+\setcounter{page}{2}
+
+\begin{document}
+
+\tableofcontents
+
+\chapter*{Abstract}
+
+We propose a new programming language where algebraic effects are visible to the
+substructural type system as polymorphic effect types. This report includes a
+high-level specification of a surface language along with description of
+procedures that translate it into OdLang Core, a small explicitly typed
+interpreted language.
+
+Мы предлагаем новый язык программирования с субструктурной систе\-мой типов, в
+которой алгебраические эффекты представлены полиморфны\-ми типами эффектов.
+Данный отчёт содержит высокоуровневую специфи\-кацию языка вместе с описанием
+процедур трансляции этого языка в OdLang Core, маленький явно типизированный
+интерпретируемый язык.
+
+\textbf{Keywords}: algebraic effects, substructural type system, bidirectional
+type checking.
+
+\chapter{Introduction}
+
+This is part of a project in the area of programming language design. We aim to
+develop a new functional language featuring a modern type system for ergonomic
+management of side effects and program resources.
+
+Simply put, side effects are everything a program does to the environment:
+device management, reads from / writes to files, missile launches, etc.
+Programming errors in this area range from embarrassing bugs to outright
+catastrophes; every substantial development team wants to be sure that these
+errors never happen. However, existing mainstream programming techniques such as
+testing and code review are unsound, which means that you can never be sure that
+there are no bugs even if all tests have passed.
+
+Luckily, there is a sound method known to every seasoned programmer: type system
+expressive enough to statically represent invariants you wish to uphold. In this
+project, we implement a new language with effect types representing computations
+that influence its environment. The idea is not novel: there are research
+languages Unison \cite{unison} and Koka \cite{koka} on this topic; a simpler and
+somewhat more tractable model is studied in \cite{bauer}. Our innovation is in
+the usage of a substructural type system to statically verify that continuations
+in effect handlers are called an appropriate number of times. A concept for such
+combination is folklore and mentioned in \cite{folklore}; this project properly
+expands on the topic.
+
+In the previous line of work, we decided to split the language in two layers:
+a surface language, OdLang, to write programs in and a core language, OdLang
+Core, to check types and interpret expressions. We also described logical rules
+for the core language; this report includes a short recap of Core's most
+important features. In the main part of this paper we come up with syntactic
+rules of OdLang as well as with algorithms for translating it into OdLang Core,
+including multiplicity elision rules, implicit quantification, bidirectional
+type checking, desugaring of multiplicity constraints and effect types and,
+finally, desugaring of terms.
+
+\chapter{Literature Review}
+
+The point of pure functional programming is to give a programmer precise control
+over side effects that happen during program execution. The consensus is to use
+special kinds of monads, notable examples being monad transformers \cite{mtl},
+free monads \cite{free} and, most recently, freer monads. The last ones in
+conjunction with heterogeneous lists give rise to the Extensible Effects
+approach \cite{exteff} which, as claimed by the authors, overcomes the drawbacks
+of previous tools. However, these techniques are rarely used outside of Haskell
+because they require quite advanced type-level machinery which is simply not
+available in other, either more simple or mainstream, languages.
+
+Albeit surprisingly, the key concept behind Extensible Effects is simple. It is
+to view an effect as an interaction between a sub-expression and a central
+authority that handles effect execution. Languages with algebraic effects, for
+their part, capitalize on this idea and provide built-in language primitives to
+build both such sub-expressions --- from now on, we will call them
+``procedures'' --- and central authorities, ``handlers''. Communication between
+them is done via continuation-passing \cite{algeff}.
+
+For example, Multicore OCaml has a way to declare new effects as well as a
+builtin function \verb|perform| to, indeed, \textit{perform} an effect
+\cite{ocaml}. Handler is just a regular \verb|case| statement that
+pattern-matches on performed effects. However, for a long time effects were
+invisible to OCaml's type system; this means that every function could be a
+procedure executing arbitrary effects, which is in no way different from
+the mainstream approach.
+
+As for Unison, they introduce proper effect types in the form of attributes on
+the function type. However, they do not restrict how many times a continuation
+is called in a handler \cite{unrestricted}, which may lead to bizarre and
+unexpected behavior of a program, just like a program in C which uses
+\verb|fork|. Koka's treatment of continuations is only slightly better as they
+do not let a programmer access continuation directly, which enables them (and
+makes them) to introduce a whole lot of ad-hoc mechanisms to make both behavior
+and performance of programs more predictable \cite{hidden}.
+
+A more disciplined solution is offered in \cite{bauer}. The authors of Runners
+in Action simplify the framework by forcing continuations to be in tail-call
+positions, effectively replacing continuation with a simple \verb|return|
+statement (pun intended). However, it makes certain effects inexpressible, most
+notably nondeterminism and asynchrony.
+
+We get rid of the tradeoffs mentioned above by embracing a substructural type
+system. In its setting, every value can have two constraints imposed on its
+usage: can it be silently dropped? Can it be copied? We simply make a programmer
+specify the constraints for continuations while declaring new effects. As a
+bonus, these constraints can be later used by an optimizing compiler to place
+values outside of the garbage-collected heap.
+
+Actually, there already are a few different substructural type systems.
+Linear Types extension in Haskell \cite{linear} and unique types in Rust
+\cite{rust} are the most well-known examples, although we take a slightly
+different approach which is extensively described in \cite{ural}. As of our
+current knowledge, this project is the first to utilize URAL for language with
+algebraic effects.
+
+\chapter{OdLang Core}
+
+Before diving into syntactic richness of a surface language, let us recap the
+most important bits about core language.
+
+\section{Kinds}
+
+OdLang Core is a dialect of System $F_\omega$. It has six kinds: substructural
+multiplicities, rows (type-level dictionaries) of any kind, pretypes (algebraic
+data types, function types), types (pretypes with a specified multiplicity),
+type-level pairs and operators (type-level functions between kinds). (Pre)types
+can be equirecursive, for this we adapt an algorithm described in \cite{stone}.
+
+In addition to the expected operations, we introduce a way to apply type
+operator of kind $k \to k'$ to the row of kind ``row $k$'', yielding an
+expression of kind ``row $k'$''. This way ``row'' can be perceived as a
+kind-level functor.
+
+Precise kinding rules for type-level calculus are given in \ref{typelevel}.
+
+\begin{figure}
+    \centering
+    \begin{mathpar}
+        \inferrule
+            {k \; \text{kind}}
+            {K,\; a :: k \;\vdash\; a :: k}
+            \textsc{KVar} \and
+        \inferrule
+            {k, k' \; \text{kind} \\ K \;\vdash\; x :: k
+                \\ K \;\vdash\; t \;::\; k \to k'}
+            {K \;\vdash\; t \; x :: k'}
+            \textsc{KApp} \and
+        \inferrule
+            {k, k' \; \text{kind} \\ K,\; a :: k \;\vdash\; b :: k'}
+            {K \;\vdash\; (a :: k .\; b) :: k \to k'}
+            \textsc{KAbs} \and
+        \inferrule
+            {K \;\vdash\; a :: k \\ K \;\vdash\; b :: k'}
+            {K \;\vdash\; \langle a, b \rangle :: k \times k'}
+            \textsc{KPair} \and
+        \inferrule
+            {K \;\vdash\; p \;::\; k \times k'}
+            {K \;\vdash\; \text{fst} \; p :: k}
+            \textsc{KFst} \and
+        \inferrule
+            {K \;\vdash\; p \;::\; k \times k'}
+            {K \;\vdash\; \text{snd} \; p :: k'}
+            \textsc{KSnd} \and
+        \inferrule
+            {k \; \text{simple kind} \\ K,\; a :: k \;\vdash\; b :: k}
+            {K \;\vdash\; (\mu\; a.\; b) :: k}
+            \textsc{KFix} \and
+        \inferrule
+            {k, k' \; \text{kind} \\ K \;\vdash\; r :: \text{row} \; k
+                \\ K \;\vdash\; t \;::\; k \to k'}
+            {K \;\vdash\; t \;@\; r \;::\; \text{row} \; k'}
+            \textsc{KMap} \and
+    \end{mathpar}
+    \caption{Type-level operations}
+    \label{typelevel}
+\end{figure}
+
+\section{Multiplicities}
+
+Multiplicities form a distributive lattice on four elements:
+
+\begin{itemize}
+    \item \textbf{U}nrestricted ($*$) --- values of such types can be left
+        unused and can be arbitrarily copied;
+    \item \textbf{R}elevant ($+$) --- cannot be left unused;
+    \item \textbf{A}ffine ($?$) --- cannot be copied, but can be left unused;
+    \item \textbf{L}inear ($!$) --- must be used exactly once.
+\end{itemize}
+
+Multiplicity literals draw an analogy with the notation of regular expressions.
+We can also join constraints of two multiplicities using $\lor$ and take common
+constraints using $\land$. Multiplicity polymorphism is present, too.
+
+\section{Row types}
+
+As it has been mentioned before, rows are type-level dictionaries. To refine on
+this statement: rows of kind ``row $k$'' are \textit{multi}-maps from field
+names to type-level expressions of kind $k$. We can declare row literals as well
+as row variables (that is, we have row polymorphism) and join rows together.
+However, there is no polymorphism over field names.
+
+\section{Pretypes}
+
+Pretypes include simple functions as well as \verb|forall| binders for different
+kinds of polymorphism. In addition, any row of types $R$ can be turned into an
+algebraic data type:
+
+\begin{itemize}
+    \item $\{\dots R\}$ is a record of values in $R$. To construct a value of
+        record type is to provide all its fields, to use the record is to use
+        all its fields.
+    \item $[\dots R]$ is a list of alternatives listed in $R$. To construct it
+        is to provide all its fields built from the same context, to use it is
+        to choose one of alternatives.
+    \item $(|\dots R|)$ is a tagged union of options listed in $R$. To construct
+        it is to construct one of the options, to use it is to pattern-match on
+        it and describe how to use every option.
+\end{itemize}
+
+Precise typing rules are given in Fig.\ref{terms-1}-\ref{terms-2}.
+
+\begin{figure}
+    \centering
+    \begin{mathpar}
+        \inferrule
+            {K;\; \Gamma,\;x:t,\;y:u,\;\Delta \;\vdash\; e:T}
+            {K;\; \Gamma,\;y:u,\;x:t,\;\Delta \;\vdash\; e:T}
+            \textsc{ $\Gamma$-Exchange} \and
+        \inferrule
+            {m \le\; ? \\ K;\; \Gamma \;\vdash\; e:T}
+            {K;\; x:p^m,\; \Gamma \;\vdash\; e:T}
+            \textsc{ $\Gamma$-Weakening} \and
+        \inferrule
+            {m \le + \\ K;\; x:t^m,\; x:t^m,\; \Gamma \;\vdash\; e:T}
+            {K;\; x:t^m,\; \Gamma \;\vdash\; e:T}
+            \textsc{ $\Gamma$-Contraction} \and
+        \inferrule{K \;\vdash\; t \; \text{type}}{K;\; x:t \;\vdash\; x:t}
+            \textsc{TVar} \and
+        \inferrule
+            {K;\; \Gamma,\; x:t \;\vdash\; e:u
+                \\ K \;\vdash\; \text{sup} \; \Gamma \le m}
+            {K; \Gamma \;\vdash\; (\lambda x.\; e) : (t \to u)^m}
+            \textsc{TAbs} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; f : (t \to u)^m \\ K;\Delta \;\vdash\; x : u}
+            {K;\; \Gamma, \Delta \;\vdash\; f \; x : u}
+            \textsc{TApp} \and
+        \inferrule
+            {a :: k,\; K;\; \Gamma \;\vdash\; e:t
+                \\ K \;\vdash\; \text{sup} \; \Gamma \le m}
+            {K;\Gamma \;\vdash\; (\Lambda a :: k.\; e)
+                : \left(\Pi(a :: k). t\right)^m}
+            \textsc{TGen} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; f : \left(\Pi(a :: k). t\right)^m
+                \\ K \;\vdash\; d :: k}
+            {K;\Gamma \;\vdash\; f \; d : \{a / d\} t}
+            \textsc{TInst}
+    \end{mathpar}
+    \caption{Context and System-F Fragment}
+    \label{terms-1}
+\end{figure}
+\begin{figure}
+    \centering
+    \begin{mathpar}
+        \inferrule
+            {\forall n \in\text{keys}\;R: \quad K;\Gamma_n \;\vdash\; e_n : R[n]
+                \\\\ K \;\vdash\; \text{sup} \; R \le m}
+            {K;\Gamma_n \;\vdash\; \{.n : e_n\} : \{\dots R\}^m}
+            \textsc{TAndI} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; s : \{\dots R\}^m
+                \\ K;\; \Delta,R \;\vdash\; e:t}
+            {K;\;\Gamma,\Delta \;\vdash\;
+                \textbf{let} \; \{.1,\dots,.n\} = s \; \textbf{in} \; e : t}
+            \textsc{TAndE} \and
+        \inferrule
+            {\forall n \in \text{keys}\;R: \quad K;\Gamma \;\vdash\; e_n : R[n]
+                \\\\ K \;\vdash\; \text{sup} \; R \le m}
+            {K;\Gamma \;\vdash\; [.n: e_n] : [\dots R]^m}
+            \textsc{TWithI} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; w : [\dots R]^m \\ n \in \text{keys} \; R}
+            {K;\Gamma \;\vdash\; w.n : R[n]}
+            \textsc{TWithE} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; e : t^{m'} \\ K \;\vdash\; m' \le m
+                \\ n \in \text{keys} \; R}
+            {K;\Gamma \;\vdash\; .n \; e : (|\dots R|)^m}
+            \textsc{TOrI} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; o : (|\dots R|)^m
+                \\\\ \forall n \in \text{keys}\;R:
+                \quad K;\; x:R[n],\; \Delta \;\vdash\; e_n : t}
+            {K;\;\Gamma,\Delta \;\vdash\; \textbf{case} \; o
+                \; \textbf{of} \; (.n \; x := e_n) : t}
+            \textsc{TOrE}
+    \end{mathpar}
+    \caption{Terms of Algebraic Data Types}
+    \label{terms-2}
+\end{figure}
+
+\chapter{Surface language}
+
+OdLang itself is a syntactic extension over its core incorporating a new kind
+(kind of effects), a new type constructor (effectful computation), nominal types
+and a few features revolving around recursion and pattern-matching. Last but not
+least, while core language is typed explicitly, surface language has a few
+tweaks to reduce amount of type annotations and improve their readability.
+
+\section{Type-level quality of life improvements}
+
+Here we list more or less expected and conventional features of a modern
+functional programming language along with novel pieces of syntactic sugar.
+
+\begin{enumerate}
+    \item Core has only type-level pairs. However, OdLang has arbitrary nonempty
+        and nonsingular type-level tuples:
+\begin{verbatim}
+tuple Quadruple : type * multiplicity * pretype * type :=
+    < {}*, !, String, String? >
+\end{verbatim}
+        Desugaring is trivial: \verb|*| is a right-associative \verb|x|;
+        components of tuples are folded with \verb|<_,_>| from right to left.
+
+        To access components of a type-level tuple, one can pattern-match on it:
+\begin{verbatim}
+tuple < _, _, Third, _ >
+    : type * multiplicity * pretype * type
+    := Quadruple
+\end{verbatim}
+        Desugaring is also trivial and involves repeated applications of
+        \verb|snd| and one application of \verb|fst| for each component except
+        for the last.
+    \item Using type-level \verb|fix| explicitly is cumbersome. One can build a
+        dependency graph of type-level expressions and use \verb|fix| for
+        strongly connected components. The same approach is used on the term
+        level for recursive functions and was originally described in [SPJ].
+
+        Before desugaring:
+\begin{verbatim}
+type Fix (f : type -> type) := f (Fix f)
+
+type Red := { head : Int*, tail : (() -> Blue)* }*
+type Blue := { head : Int*, tail : (() -> Red)* }*
+\end{verbatim}
+        After desugaring:
+\begin{verbatim}
+type Fix (f : type -> type) := (fix t : type . f t)
+
+tuple <Red, Blue> : type * type :=
+    (fix <r, b> : type * type . <
+        { head : Int*, tail : (() -> b)* }*,
+        { head : Int*, tail : (() -> r)* }*,
+    >)
+\end{verbatim}
+    \item In most cases, kind of operator and forall arguments can be inferred
+        from its usage in the resulting expression:
+\begin{verbatim}
+pretype Beside f r := {...r, ...(f @ r)}
+    -- r is inferred to be a row of types
+    -- f is inferred to be a (type -> type) operator
+\end{verbatim}
+        The case where inference fails can be seen above, in \verb|Fix| case,
+        because \verb|f| can be kinded as \verb|pretype -> pretype|, too.
+
+        To perform said kind inference, one can utilize a standard unification
+        algorithm [HM].
+    \item Following convention in Haskell, we can forbid lowercase type-level
+        entities and assume that every lowercase name in a type is an argument
+        of a forall binder.
+    \item Omnipresent multiplicity annotations obscure type annotations.
+        However, certain annotations can be omit. For example, annotations on a
+        record and on nearly all arrows are elided here:
+\begin{verbatim}
+type Fmap f m := forall a b. (a -> b) % m -> f a -> f b
+
+pair : a -> b -> { fst: a, snd: b } :=
+    | x, y := { fst: x, snd: y }
+\end{verbatim}
+        Following typing rules, we can only generate constraints on annotations,
+        but not annotations themselves. Therefore we cannot infer them, but we
+        can introduce sane defaults for common cases, as is done with lifetime
+        annotations in Rust [rust]. We propose two elision rules:
+        \begin{enumerate}
+            \item For arrow and forall types, choose the most permissive
+                annotation;
+            \item For algebraic data types, introduce a new annotation variable.
+        \end{enumerate}
+        Applying elision rules to the expressions above, we get:
+\begin{verbatim}
+type Fmap f m := (forall a. (forall b.
+    ((a -> b) % m -> (f a -> f b) % m)*
+)*)*
+
+pair : (forall a. (forall b . (forall m .
+    (a -> (
+        b -> { fst: a, snd: b } % (m \/ mult a \/ mult b)
+    ) % mult a)*
+)*)*)* :=
+    ...
+\end{verbatim}
+    \item OdLang Core allows records, but not tuples. Tuples in surface language
+        are encoded using a record type of sufficient arity:
+\begin{verbatim}
+type Tuple4 a b c d := { n1: a, n2: b, n3: c, n4: d }
+\end{verbatim}
+        Instead of doing this, we could represent tuples as nested pairs, but
+        this representation does not bring any immediate benefits.
+    \item OdLang Core does not have a way to constrain multiplicities. However,
+        we can use \verb|/\| to relax constraints multiplicities impose
+        themselves:
+\begin{verbatim}
+dup : [a <= +] -> a -> (a, a) :=
+    | x -> (x, x)
+
+dup' : a % (m /\ +) -> (a % (m /\ +), a % (m /\ +)) :=
+    | x -> (x, x)
+\end{verbatim}
+\end{enumerate}
+
+\section{Effect types, effect polymorphism}
+
+As you might remember, the biggest hurdle of this project is trying to
+incorporate algebraic effects into a sound substructural type system. We start
+with introducing a new kind, \verb|effect|:
+
+\begin{verbatim}
+effect State s where
+    modifyState: (s -> s)! ->! {}*
+
+effect Generator t where
+    yield: t ->! {}*
+\end{verbatim}
+
+Effect is a list of operations a corresponding computation can do. From
+imperative point of view, each operation is a side-effectful function.
+Multiplicity annotation after its arrow describes an amount of times a control
+flow might return to the point where operation was called.
+
+Effects can be joined using a comma operator: \\
+\verb|State (List t), Generator t|.
+
+Denoting the type of a computation requiring effect \verb|e| and yielding a
+result of type \verb|a| as \verb+e |= a+, let us describe the desugaring of
+effects into Core language.
+
+Effects themselves are rows of triples \verb|type * multiplicity * type|:
+
+\begin{verbatim}
+row State s where
+    modifyState: < (s -> s)!, !, {}* >
+
+row Generator t where
+    yield: < t, !, {}* >
+\end{verbatim}
+
+Therefore joining effects is the same as joining rows. In addition, effect
+polymorphism becomes a special case of row polymorphism.
+
+Given an effect row \verb|e| and a type \verb|a|, \verb+|=+ is best described
+as an operator:
+
+\begin{verbatim}
+type intoEntry rec <from, m, to> :=
+    (from, (to -> rec % (m \/ mult to)) % m)
+
+pretype (e |= a) := (|
+    pure: a,
+    ...(intoEntry (e |= a) @ e)
+|)
+\end{verbatim}
+
+\section{Term-level quality of life improvements}
+
+\begin{enumerate}
+    \item Named functions admit a more compact declaration:
+\begin{verbatim}
+pair : a -> b -> { fst: a, snd: b } :=
+    | x, y := { fst: x, snd: y }
+
+pair' (x : a) (y : b) : { fst: a, snd: b } :=
+    { fst: x, snd: y }
+\end{verbatim}
+    \item Lambda expressions followed by a \verb|case| statement admit a more
+        compact declaration:
+\begin{verbatim}
+type List a m := (|
+    Nil: {} % m
+    Cons: (a, List a m) % (m \/ mult a)
+|) % (m \/ mult a)
+
+foldr (f : a -> b -> b) (s : b) : List a m -> b :=
+    | xs := case xs of
+        Nil _ := s
+        Cons (x, xs) := f x (foldr f s xs)
+
+foldr' (f : a -> b -> b) (s : b) : List a m -> b :=
+    | Nil _ := s
+    | Cons (x, xs) := f x (foldr' f s xs)
+\end{verbatim}
+\end{enumerate}
+
+\section{Bidirectional type checking}
+
+\textbf{Results}
+
+It is expected to will have implemented an interpreter of the language described
+above, including the split in the surface and core languages: logical rules of
+the core language are already properly written out, and the Haskell ecosystem
+has all the necessary tools.
+
+Type inference and the existence of principal types in the surface language are
+highly anticipated because both row types and substructural types play nicely
+with Hindley-Milner. However, general equirecursive types may pose a threat to
+the type inference, therefore they might be hidden beneath the surface.
+
+\textbf{Conclusion}
+
+Utilising the recent advancements in type theory, we developed a polished model
+of computations with side effects which is an improvement upon analogues in
+terms of soundness and, theoretically, performance. While doing so, we made
+initially unrelated constructs from different type systems interplay nicely: row
+polymorphism with substructural typing, both type-level pairs and row
+polymorphism with algebraic effects... In addition, we saved ourselves the
+headache of developing a dedicated runtime for algebraic effects using a
+well-typed encoding into continuation-passing style.
+
+The most notable limitation of our solution is that core language is hardly
+extensible: generalized algebraic data types cannot be easily fit into it;
+coexistence of dependent types with substructural types is still an ongoing
+research topic;... To overcome this limitation, we can make use of the
+two-layered architecture of the language and change core language independently
+from the surface to incorporate new features.
+
+Nevertheless, as it was said in the beginning, the primary goals after this
+project are to formally verify the soundness of the type system and to write a
+self-hosting compiler. The first one is needed primarily to exclude the human
+factor; writing a compiler is required to fulfill promises of performance.
+
+Designing one more programming language might not change anything in the grand
+scheme of things; however, in order to reach the ideal future where every
+programmer writes programs in languages with effect types, we as a whole
+programming community need enough failed attempts to learn from and working
+alternatives to choose from.
+
+\bibliographystyle{IEEEtran}
+\bibliography{report}
+
+\end{document}

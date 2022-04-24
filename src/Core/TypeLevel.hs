@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Core.TypeLevel where
@@ -79,6 +80,12 @@ data TLTerm
   | KPretype Position PreTerm
   deriving (Show)
 
+shiftTLTerm :: TLTerm -> Int -> TLTerm
+shiftTLTerm = _
+
+substTLTerm :: TLTerm -> Int -> TLTerm -> TLTerm
+substTLTerm = _
+
 type KindingResult = CtxResult [ProperKind] KindingErrors
 
 synthesizeKind :: TLTerm -> KindingResult ProperKind
@@ -159,12 +166,10 @@ getPos (KRow p _) = p
 getPos (KType p _ _) = p
 getPos (KPretype p _) = p
 
-checkSup ::
-  -- | Upper bound for multiplicities
-  TLTerm ->
-  -- | List of types
-  [TLTerm] ->
-  KindingResult ()
+type Mult = TLTerm
+type Type = TLTerm
+
+checkSup :: Foldable f => Mult -> f Type -> KindingResult ()
 checkSup = error "TODO"
 
 upperBound :: Int -> MultLit

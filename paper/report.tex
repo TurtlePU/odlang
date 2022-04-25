@@ -322,7 +322,7 @@ Precise typing rules are given in Fig.\ref{terms-1}-\ref{terms-2}.
     \label{terms-2}
 \end{figure}
 
-\chapter{Surface language}
+\chapter{Surface Language}
 
 OdLang itself is a syntactic extension over its core incorporating a new kind
 (kind of effects), a new type constructor (effectful computation), nominal types
@@ -391,7 +391,7 @@ pretype Beside f r := {...r, ...(f @ r)}
     \item Following convention in Haskell, we can forbid lowercase type-level
         entities and assume that every lowercase name in a type is an argument
         of a forall binder.
-    \item Omnipresent multiplicity annotations obscure type annotations.
+    \item Omnipresent multiplicity annotations obscure type signatures.
         However, certain annotations can be omit. For example, annotations on a
         record and on nearly all arrows are elided here:
 \begin{verbatim}
@@ -433,7 +433,7 @@ type Tuple4 a b c d := { n1: a, n2: b, n3: c, n4: d }
         we can use \verb|/\| to relax constraints multiplicities impose
         themselves:
 \begin{verbatim}
-dup : [a <= +] -> a -> (a, a) :=
+dup : (a <= +) => a -> (a, a) :=
     | x -> (x, x)
 
 dup' : a % (m /\ +) -> (a % (m /\ +), a % (m /\ +)) :=
@@ -441,7 +441,63 @@ dup' : a % (m /\ +) -> (a % (m /\ +), a % (m /\ +)) :=
 \end{verbatim}
 \end{enumerate}
 
-\section{Effect types, effect polymorphism}
+\section{Term-level quality of life improvements}
+
+Of course, OdLang includes nested pattern-matching and pattern-matching of
+product types. In addition, we include \verb|let| expressions and \verb|where|
+blocks as they are in Haskell.
+
+Pattern-matching has to be exhaustive.
+
+\begin{enumerate}
+    \item Named functions admit a more compact declaration:
+\begin{verbatim}
+row Fin2 a b where
+    fst: a
+    snd: b
+
+pretype Pair a b := { ...(Fin2 a b) }
+
+pair : a -> b -> Pair a b :=
+    | x, y := { fst: x, snd: y }
+
+pair' (x : a) (y : b) : Pair a b :=
+    { fst: x, snd: y }
+\end{verbatim}
+    \item Lambda expressions followed by a \verb|case| statement admit a more
+        compact declaration:
+\begin{verbatim}
+type List m a := (|
+    Nil: {} % m
+    Cons: (a, List m a) % (m \/ mult a)
+|) % (m \/ mult a)
+
+foldr (f : a -> b -> b) (s : b) : List m a -> b :=
+    | xs := case xs of
+        Nil _ := s
+        Cons (x, xs) := f x (foldr f s xs)
+
+foldr' (f : a -> b -> b) (s : b) : List m a -> b :=
+    | Nil _ := s
+    | Cons (x, xs) := f x (foldr' f s xs)
+\end{verbatim}
+    \item Dot notation is available both for \verb|[]|-types and for records:
+\begin{verbatim}
+ifThenElse : Bool -> [...(Fin2 a a)] -> a :=
+    | True, opts := opts.fst
+    | False, opts := opts.snd
+    -- already in Core, desugaring is not needed
+
+join (f : a -> b -> c) (p : Pair a b) : c := f p.fst p.snd
+
+join' : (a -> b -> c) -> Pair a b -> c :=
+    | f, p := let { fst, snd } := p in f fst snd
+\end{verbatim}
+\end{enumerate}
+
+\section{Algebraic effects}
+
+\subsection{Effect types}
 
 As you might remember, the biggest hurdle of this project is trying to
 incorporate algebraic effects into a sound substructural type system. We start
@@ -460,8 +516,7 @@ imperative point of view, each operation is a side-effectful function.
 Multiplicity annotation after its arrow describes an amount of times a control
 flow might return to the point where operation was called.
 
-Effects can be joined using a comma operator: \\
-\verb|State (List t), Generator t|.
+Effects can be joined: \verb|State (List ! t) & Generator t|.
 
 Denoting the type of a computation requiring effect \verb|e| and yielding a
 result of type \verb|a| as \verb+e |= a+, let us describe the desugaring of
@@ -480,12 +535,12 @@ row Generator t where
 Therefore joining effects is the same as joining rows. In addition, effect
 polymorphism becomes a special case of row polymorphism.
 
-Given an effect row \verb|e| and a type \verb|a|, \verb+|=+ is best described
-as an operator:
+Given an effect row \verb|e| and a type \verb|a|, \verb+e |= a+ is best
+described as an operator:
 
 \begin{verbatim}
 type intoEntry rec <from, m, to> :=
-    (from, (to -> rec % (m \/ mult to)) % m)
+    (from, (to -> rec % (m \/ mult to)) % m) % (m \/ mult from)
 
 pretype (e |= a) := (|
     pure: a,
@@ -493,37 +548,85 @@ pretype (e |= a) := (|
 |)
 \end{verbatim}
 
-\section{Term-level quality of life improvements}
+\subsection{Computations}
 
-\begin{enumerate}
-    \item Named functions admit a more compact declaration:
+While on term level, effectful operations are typed as functions accepting its
+argument and continuation. For example, \verb|yield| is typed as
+
 \begin{verbatim}
-pair : a -> b -> { fst: a, snd: b } :=
-    | x, y := { fst: x, snd: y }
-
-pair' (x : a) (y : b) : { fst: a, snd: b } :=
-    { fst: x, snd: y }
+t -> ({}* -> (Generator t & e |= a)!)! -> Generator t & e |= a
 \end{verbatim}
-    \item Lambda expressions followed by a \verb|case| statement admit a more
-        compact declaration:
+
+One can see that this is minor syntactic sugar over creation of a corresponding
+variant of a union. However, passing continuations as is leads to well-known
+issue of callback hell:
+
 \begin{verbatim}
-type List a m := (|
-    Nil: {} % m
-    Cons: (a, List a m) % (m \/ mult a)
-|) % (m \/ mult a)
-
-foldr (f : a -> b -> b) (s : b) : List a m -> b :=
-    | xs := case xs of
-        Nil _ := s
-        Cons (x, xs) := f x (foldr f s xs)
-
-foldr' (f : a -> b -> b) (s : b) : List a m -> b :=
-    | Nil _ := s
-    | Cons (x, xs) := f x (foldr' f s xs)
+countToThree : Generator Nat |= Unit :=
+    yield 1 | _ :=
+        yield 2 | _ :=
+            yield 3 | x := x
 \end{verbatim}
-\end{enumerate}
+
+We solve this by introducing something analogous to do-notation in Haskell.
+\verb|x <- expr; y| means \verb+expr | x := y+. We can also ignore the result:
+\verb|x; y| means \verb+x | _ := y+. Using this new notation,
+\verb|countToThree| becomes:
+
+\begin{verbatim}
+countToThree : Generator Nat |= Unit := do
+    yield 1
+    yield 2
+    yield 3
+    {}
+\end{verbatim}
+
+One last issue to solve is about running one computation inside another. Using
+our new notation, it is enough to provide the following function:
+
+\begin{verbatim}
+run : (e >= m) => (e |= a) -> (a -> e |= b) % m -> e |= b
+\end{verbatim}
+
+Note the new kind of multiplicity constraint: \verb|e >= m| for effect \verb|e|
+means ``\verb|m <= n| for all multiplicities \verb|n| in \verb|e|''. Desugaring
+is similar to what is done with \verb|a <= m| constraints, only here we use
+\verb|\/| instead of \verb|/\|.
+
+\subsection{Handlers}
+
+After desugaring, effectful computations become recursive open unions. Therefore
+handlers have to be recursive functions on such unions:
+
+\begin{verbatim}
+collect : (Generator Nat & e |= Unit)
+        -> State (List ! Nat) & e |= Unit :=
+    | pure {} := pure {}
+    | yield (x, cont) := do
+        modifyState | xs := Cons (x, xs)
+        collect (cont {})
+    | ...other (x, cont) := other (x, | y := collect (cont y))
+\end{verbatim}
+
+However, catch-all case is the same for every effect-polymorphic handler. We can
+let programmers omit it. Same for \verb|pure| cases in handlers that do not
+change the result of the computation.
+
+While we're at it, let's write a \verb|run| function from previous section.
+
+\begin{verbatim}
+run : (e >= m) => (e |= a) -> (a -> e |= b) % m -> e |= b :=
+    | pure x, f := f x
+    | ...rest (x, k), f := rest (x, | y := run (k y) f)
+\end{verbatim}
+
+Now, the purpose of the constraint becomes clear.
+
+\section{Nominal types}
 
 \section{Bidirectional type checking}
+
+\subsection{Return type inference}
 
 \textbf{Results}
 

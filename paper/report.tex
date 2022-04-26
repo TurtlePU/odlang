@@ -279,7 +279,7 @@ Precise typing rules are given in Fig.\ref{terms-1}-\ref{terms-2}.
             {K;\Gamma \;\vdash\; f \; d : \{a / d\} t}
             \textsc{TInst}
     \end{mathpar}
-    \caption{Context and System-F Fragment}
+    \caption{System-F Fragment and Substructural Context}
     \label{terms-1}
 \end{figure}
 \begin{figure}
@@ -288,7 +288,8 @@ Precise typing rules are given in Fig.\ref{terms-1}-\ref{terms-2}.
         \inferrule
             {\forall n \in\text{keys}\;R: \quad K;\Gamma_n \;\vdash\; e_n : R[n]
                 \\\\ K \;\vdash\; \text{sup} \; R \le m}
-            {K;\Gamma_n \;\vdash\; \{.n : e_n\} : \{\dots R\}^m}
+            {K;\overline{\Gamma_n} \;\vdash\;
+                \{\overline{.n : e_n}\} : \{\dots R\}^m}
             \textsc{TAndI} \and
         \inferrule
             {K;\Gamma \;\vdash\; s : \{\dots R\}^m
@@ -299,7 +300,7 @@ Precise typing rules are given in Fig.\ref{terms-1}-\ref{terms-2}.
         \inferrule
             {\forall n \in \text{keys}\;R: \quad K;\Gamma \;\vdash\; e_n : R[n]
                 \\\\ K \;\vdash\; \text{sup} \; R \le m}
-            {K;\Gamma \;\vdash\; [.n: e_n] : [\dots R]^m}
+            {K;\Gamma \;\vdash\; [\overline{.n: e_n}] : [\dots R]^m}
             \textsc{TWithI} \and
         \inferrule
             {K;\Gamma \;\vdash\; w : [\dots R]^m \\ n \in \text{keys} \; R}
@@ -315,7 +316,7 @@ Precise typing rules are given in Fig.\ref{terms-1}-\ref{terms-2}.
                 \\\\ \forall n \in \text{keys}\;R:
                 \quad K;\; x:R[n],\; \Delta \;\vdash\; e_n : t}
             {K;\;\Gamma,\Delta \;\vdash\; \textbf{case} \; o
-                \; \textbf{of} \; (.n \; x := e_n) : t}
+                \; \textbf{of} \; (\overline{.n \; x := e_n}) : t}
             \textsc{TOrE}
     \end{mathpar}
     \caption{Terms of Algebraic Data Types}
@@ -325,8 +326,8 @@ Precise typing rules are given in Fig.\ref{terms-1}-\ref{terms-2}.
 \chapter{Surface Language}
 
 OdLang itself is a syntactic extension over its core incorporating a new kind
-(kind of effects), a new type constructor (effectful computation), nominal types
-and a few features revolving around recursion and pattern-matching. Last but not
+(kind of effects), a new type constructor (effectful computation) and a few
+features revolving around recursion and pattern-matching. Last but not
 least, while core language is typed explicitly, surface language has a few
 tweaks to reduce amount of type annotations and improve their readability.
 
@@ -357,7 +358,8 @@ tuple < _, _, Third, _ >
     \item Using type-level \verb|fix| explicitly is cumbersome. One can build a
         dependency graph of type-level expressions and use \verb|fix| for
         strongly connected components. The same approach is used on the term
-        level for recursive functions and was originally described in [SPJ].
+        level for recursive functions and was originally described in
+        \cite{spj}.
 
         Before desugaring:
 \begin{verbatim}
@@ -387,7 +389,7 @@ pretype Beside f r := {...r, ...(f @ r)}
         because \verb|f| can be kinded as \verb|pretype -> pretype|, too.
 
         To perform said kind inference, one can utilize a standard unification
-        algorithm [HM].
+        algorithm \cite{milner}.
     \item Following convention in Haskell, we can forbid lowercase type-level
         entities and assume that every lowercase name in a type is an argument
         of a forall binder.
@@ -403,7 +405,7 @@ pair : a -> b -> { fst: a, snd: b } :=
         Following typing rules, we can only generate constraints on annotations,
         but not annotations themselves. Therefore we cannot infer them, but we
         can introduce sane defaults for common cases, as is done with lifetime
-        annotations in Rust [rust]. We propose two elision rules:
+        annotations in Rust \cite{elision}. We propose two elision rules:
         \begin{enumerate}
             \item For arrow and forall types, choose the most permissive
                 annotation;
@@ -447,7 +449,9 @@ Of course, OdLang includes nested pattern-matching and pattern-matching of
 product types. In addition, we include \verb|let| expressions and \verb|where|
 blocks as they are in Haskell.
 
-Pattern-matching has to be exhaustive.
+Pattern-matching has to be exhaustive. Recursive functions can be defined via
+$Y$ combinator (or any other fixpoint combinator) which is typeable in the Core
+language thanks to equirecursive types.
 
 \begin{enumerate}
     \item Named functions admit a more compact declaration:
@@ -602,10 +606,10 @@ handlers have to be recursive functions on such unions:
 collect : (Generator Nat & e |= Unit)
         -> State (List ! Nat) & e |= Unit :=
     | pure {} := pure {}
-    | yield (x, cont) := do
+    | yield x cont := do
         modifyState | xs := Cons (x, xs)
         collect (cont {})
-    | ...other (x, cont) := other (x, | y := collect (cont y))
+    | *other x cont := other x | y := collect (cont y)
 \end{verbatim}
 
 However, catch-all case is the same for every effect-polymorphic handler. We can
@@ -617,51 +621,69 @@ While we're at it, let's write a \verb|run| function from previous section.
 \begin{verbatim}
 run : (e >= m) => (e |= a) -> (a -> e |= b) % m -> e |= b :=
     | pure x, f := f x
-    | ...rest (x, k), f := rest (x, | y := run (k y) f)
+    | *rest x k, f := rest x | y := run (k y) f
 \end{verbatim}
 
 Now, the purpose of the constraint becomes clear.
 
-\section{Nominal types}
-
 \section{Bidirectional type checking}
 
-\subsection{Return type inference}
+Although we managed to simplify type annotations by employing elision rules,
+kind inference and implicit quantification, we still want to minify the amount
+of types programmer has to write out. This is the main task of type inference;
+two extremes of type inference landscape include:
 
-\textbf{Results}
+\begin{enumerate}
+    \item Global type inference in Hindley-Milner style type systems, where the
+        whole program can be written without a single type annotation
+        \cite{milner};
+    \item Extremely local type inference, where only the most obvious
+        annotations can be omit \cite{go}.
+\end{enumerate}
 
-It is expected to will have implemented an interpreter of the language described
-above, including the split in the surface and core languages: logical rules of
-the core language are already properly written out, and the Haskell ecosystem
-has all the necessary tools.
+In our case, the necessity to only annotate top-level function declarations
+seems plausible; in other words, we want to annotate introduction forms, but not
+elimination forms. This is really close to the approach of bidirectional type
+checking \cite{bidirectional} in which we split one typing judgement into two: a
+type \textit{synthesis} judgement and type \textit{checking} judgement. Care
+must be taken while splitting the judgement; we also have to account for
+implicit quantification because it makes implicit instantiation necessary. We
+solve the last problem by utilising Quick Look \cite{quick-look}, an
+impredicative type inference engine, and extend it with rules regarding
+algebraic data types and effects which are fairly simple and will be given in a
+final version of the thesis.
 
-Type inference and the existence of principal types in the surface language are
-highly anticipated because both row types and substructural types play nicely
-with Hindley-Milner. However, general equirecursive types may pose a threat to
-the type inference, therefore they might be hidden beneath the surface.
+\section{Future extensions}
 
-\textbf{Conclusion}
+As of now, the surface language lacks two common features of pure functional
+languages: nominal types and typeclasses. Both are left out of scope because
+they are mostly unrelated to the algebraic effects as we approached it. In
+addition, nominal types do not pose a significant challenge. On the other hand,
+typeclasses in a substructural type system face new problems. For example,
+consider a conventional Functor typeclass:
 
-Utilising the recent advancements in type theory, we developed a polished model
-of computations with side effects which is an improvement upon analogues in
-terms of soundness and, theoretically, performance. While doing so, we made
-initially unrelated constructs from different type systems interplay nicely: row
-polymorphism with substructural typing, both type-level pairs and row
-polymorphism with algebraic effects... In addition, we saved ourselves the
-headache of developing a dedicated runtime for algebraic effects using a
-well-typed encoding into continuation-passing style.
+\begin{verbatim}
+class Functor f where
+    fmap : (a -> b) -> f a -> f b
+\end{verbatim}
 
-The most notable limitation of our solution is that core language is hardly
-extensible: generalized algebraic data types cannot be easily fit into it;
-coexistence of dependent types with substructural types is still an ongoing
-research topic;... To overcome this limitation, we can make use of the
-two-layered architecture of the language and change core language independently
-from the surface to incorporate new features.
+First of all, \verb|f| has to be a functor from types to types, not from
+pretypes to pretypes. This limits a space of possible instances. Furthermore, an
+\verb|a -> b| argument's multiplicity is assumed to be \verb|*|, however certain
+data types (\verb|Maybe|, \verb|NonEmpty| in Haskell) can assume stricter
+multiplicities. Therefore, we either have to have four similar typeclasses or
+introduce one two-param type class. Either decision motivates us to design a
+novel typeclass hierarchy which is way out of scope for this paper, although it
+is tackled in \cite{linear-base}.
 
-Nevertheless, as it was said in the beginning, the primary goals after this
-project are to formally verify the soundness of the type system and to write a
-self-hosting compiler. The first one is needed primarily to exclude the human
-factor; writing a compiler is required to fulfill promises of performance.
+\chapter{Conclusion}
+
+As a result of the practice, we came up with the design of a surface language
+with algebraic effects and handlers which nicely fit into a substructural type
+system. This language features effect, row and multiplicity polymorphism and is
+suitable for modeling complex effectful interactions. All related algorithms are
+elaborated and are ready to be implemented in an interpreter in Haskell which
+will be presented as the main result of our thesis.
 
 Designing one more programming language might not change anything in the grand
 scheme of things; however, in order to reach the ideal future where every

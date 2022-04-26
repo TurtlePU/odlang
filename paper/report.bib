@@ -9,23 +9,22 @@
     doi = {https://doi.org/10.1016/j.entcs.2015.12.003},
     author = {Matija Pretnar},
     keywords = {algebraic effects, handlers, effect system, semantics, logic, tutorial},
-    abstract = {This paper is a tutorial on algebraic effects and handlers. In it, we explain what algebraic effects are, give ample examples to explain how handlers work, define an operational semantics and a type & effect system, show how one can reason about effects, and give pointers for further reading.}
 }
 
 @misc{unison,
     author = {{Unison Computing}},
     title = {The {Unison} language},
-    year = {2021},
-    note = {Last accessed 24 February 2022},
+    year = {2022},
+    note = {Last accessed 26 April 2022},
     url = {https://www.unisonweb.org/}
 }
 
 @misc{unrestricted,
     author = {{Unison Computing}},
-    title = {Unison language reference. {Pattern} matching on ability constructors},
-    year = {2021},
-    note = {Last accessed 24 February 2022},
-    url = {https://www.unisonweb.org/docs/language-reference#pattern-matching-on-ability-constructors},
+    title = {{Abilities and ability handlers. Unison programming language}},
+    year = {2022},
+    note = {Last accessed 26 April 2022},
+    url = {https://www.unison-lang.org/learn/language-reference/abilities-and-ability-handlers/#pattern-matching-on-ability-constructors},
 }
 
 @techreport{koka,
@@ -33,30 +32,16 @@
     title = {Algebraic Effects for Functional Programming},
     year = {2016},
     month = {August},
-    abstract = {Algebraic effect handlers, are recently gaining in popularity as a purely functional approach to modeling effects. In this article, we give an end-to-end overview of practical algebraic effects in the context of a compiled implementation in the Koka language. In particular, we show how algebraic effects generalize over common constructs like exception handling, state, iterators and async-await. We give an effective type inference algorithm based on extensible effect rows using scoped labels, and a direct operational semantics. Finally, we show an efficient compilation scheme to common runtime platforms (such as JavaScript, the JVM, or .NET) using a type directed selective CPS translation.},
     pages = {15},
     number = {MSR-TR-2016-29},
     institution = {Microsoft Research},
-}
-
-@article{rowkoka,
-   title={Koka: Programming with Row Polymorphic Effect Types},
-   volume={153},
-   ISSN={2075-2180},
-   doi={http://dx.doi.org/10.4204/EPTCS.153.8},
-   journal={Electronic Proceedings in Theoretical Computer Science},
-   publisher={Open Publishing Association},
-   author={Leijen, Daan},
-   year={2014},
-   month={Jun},
-   pages={100–126}
 }
 
 @misc{hidden,
     author = {Daan Leijen},
     title = {The {Koka} Programming Language. {Effect} Handlers},
     year = {2022},
-    note = {Last accessed 24 February 2022},
+    note = {Last accessed 26 April 2022},
     url = {https://koka-lang.github.io/koka/doc/book.html#sec-handlers},
 }
 
@@ -86,18 +71,8 @@
     author = {KC Sivaramakrishnan},
     title = {Effective Concurrency with Algebraic Effects},
     year = {2015},
-    note = {Last accessed 24 February 2022},
+    note = {Last accessed 26 April 2022},
     url = {https://kcsrk.info/ocaml/multicore/2015/05/20/effects-multicore/},
-}
-
-@inproceedings{rowcaml,
-    author = {Garrigue, Jacques},
-    year = {1998},
-    month = {10},
-    pages = {},
-    title = {Programming with Polymorphic Variants},
-    booktitle = {ACM SIGPLAN Workshop on ML},
-    address = {Baltimore, MD}
 }
 
 @inproceedings{mtl,
@@ -115,7 +90,7 @@
     author = {Edward Kmett},
     title = {Monads for Free},
     year = {2008},
-    note = {Last accessed 24 February 2022},
+    note = {Last accessed 26 April 2022},
     url = {http://comonad.com/reader/2008/monads-for-free/},
 }
 
@@ -129,22 +104,10 @@
     number = {12},
     issn = {0362-1340},
     doi = {https://doi.org/10.1145/2887747.2804319},
-    abstract = { We present a rational reconstruction of extensible effects, the recently proposed alternative to monad transformers, as the confluence of efforts to make effectful computations compose. Free monads and then extensible effects emerge from the straightforward term representation of an effectful computation, as more and more boilerplate is abstracted away. The generalization process further leads to freer monads, constructed without the Functor constraint. The continuation exposed in freer monads can then be represented as an efficient type-aligned data structure. The end result is the algorithmically efficient extensible effects library, which is not only more comprehensible but also faster than earlier implementations. As an illustration of the new library, we show three surprisingly simple applications: non-determinism with committed choice (LogicT), catching IO exceptions in the presence of other effects, and the semi-automatic management of file handles and other resources through monadic regions. We extensively use and promote the new sort of `laziness', which underlies the left Kan extension: instead of performing an operation, keep its operands and pretend it is done. },
     journal = {SIGPLAN Not.},
     month = {aug},
     pages = {94–105},
     keywords = {free monad, type and effect system, Kan extension, coroutine, effect handler, effect interaction, open union}
-}
-
-@incollection{ghc,
-    author = {Simon Marlow and Simon Peyton-Jones},
-    title = {{The Glasgow Haskell Compiler}},
-    booktitle = {The Architecture of Open Source Applications, Volume II},
-    editor = {Brown, A. and Wilson, G.},
-    pages = {67--88},
-    isbn = {9781105571817},
-    year = {2012},
-    publisher = {CreativeCommons}
 }
 
 @article{linear,
@@ -171,7 +134,6 @@
     volume = {2},
     number = {POPL},
     doi = {https://doi.org/10.1145/3158154},
-    abstract = {Rust is a new systems programming language that promises to overcome the seemingly fundamental tradeoff between high-level safety guarantees and low-level control over resource management. Unfortunately, none of Rust's safety claims have been formally proven, and there is good reason to question whether they actually hold. Specifically, Rust employs a strong, ownership-based type system, but then extends the expressive power of this core type system through libraries that internally use unsafe features. In this paper, we give the first formal (and machine-checked) safety proof for a language representing a realistic subset of Rust. Our proof is extensible in the sense that, for each new Rust library that uses unsafe features, we can say what verification condition it must satisfy in order for it to be deemed a safe extension to the language. We have carried out this verification for some of the most important libraries that are used throughout the Rust ecosystem.},
     journal = {Proc. ACM Program. Lang.},
     month = {dec},
     keywords = {Rust, separation logic, logical relations, type systems, concurrency}
@@ -187,7 +149,6 @@
     number = {9},
     issn = {0362-1340},
     doi = {https://doi.org/10.1145/1090189.1086376},
-    abstract = {The concept of a "unique" object arises in many emerging programming languages such as Clean, CQual, Cyclone, TAL, and Vault. In each of these systems, unique objects make it possible to perform operations that would otherwise be prohibited (e.g., deallocating an object) or to ensure that some obligation will be met (e.g., an opened file will be closed). However, different languages provide different interpretations of "uniqueness" and have different rules regarding how unique objects interact with the rest of the language.Our goal is to establish a common model that supports each of these languages, by allowing us to encode and study the interactions of the different forms of uniqueness. The model we provide is based on a substructural variant of the polymorphic λ-calculus, augmented with four kinds of mutable references: unrestricted, relevant, affine, and linear. The language has a natural operational semantics that supports deallocation of references, strong (type-varying) updates, and storage of unique objects in shared references. We establish the strong soundness of the type system by constructing a novel, semantic interpretation of the types.},
     journal = {SIGPLAN Not.},
     month = {sep},
     pages = {78–91},
@@ -199,4 +160,71 @@
   author = {Christopher A. Stone and Andrew P. Schoonmaker},
   institution = {Harvey Mudd College},
   year = {2005}
+}
+
+@book{spj,
+    author = {Peyton Jones, Simon},
+    title = {The Implementation of Functional Programming Languages},
+    year = {1987},
+    month = {January},
+    publisher = {Prentice Hall},
+}
+
+@article{milner,
+    title = {A theory of type polymorphism in programming},
+    journal = {Journal of Computer and System Sciences},
+    volume = {17},
+    number = {3},
+    pages = {348-375},
+    year = {1978},
+    issn = {0022-0000},
+    doi = {https://doi.org/10.1016/0022-0000(78)90014-4},
+    author = {Robin Milner},
+}
+
+@misc{elision,
+    title = {Lifetime elision - {The Rust Reference}},
+    year = {2021},
+    note = {Last accessed 26 April 2022},
+    url = {https://doc.rust-lang.org/reference/lifetime-elision.html},
+}
+
+@misc{go,
+    title = {{A Tour of Go. Type inference}},
+    note = {Last accessed 26 April 2022},
+    url = {https://go.dev/tour/basics/14},
+}
+
+@article{bidirectional,
+    author = {Dunfield, Jana and Krishnaswami, Neel},
+    title = {Bidirectional Typing},
+    year = {2021},
+    issue_date = {June 2022},
+    publisher = {Association for Computing Machinery},
+    address = {New York, NY, USA},
+    volume = {54},
+    number = {5},
+    issn = {0360-0300},
+    doi = {10.1145/3450952},
+    journal = {ACM Comput. Surv.},
+    month = {may},
+    articleno = {98},
+    numpages = {38},
+    keywords = {type inference, Type checking}
+}
+
+@inproceedings{quick-look,
+    author = {Serrano, Alejandro and Hage, Jurriaan and Peyton Jones, Simon and Vytiniotis, Dimitrios},
+    title = {A quick look at impredicativity},
+    organization = {ACM},
+    booktitle = {International Conference on Functional Programming (ICFP'20)},
+    year = {2020},
+    month = {August},
+    publisher = {ACM},
+}
+
+@misc{linear-base,
+    title = {{linear-base: Standard library for linear types}},
+    note = {Last accessed 26 April 2022},
+    url = {https://hackage.haskell.org/package/linear-base},
 }

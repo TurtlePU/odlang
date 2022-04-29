@@ -12,3 +12,8 @@ instance Semigroup Position where
 
 instance Monoid Position where
   mempty = undefined
+
+data Positioned f = Posed
+  { pos :: Position,
+    rec :: f (Positioned f)
+  }

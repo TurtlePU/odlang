@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Core.TypeLevel where
@@ -31,143 +30,138 @@ data MultLit = MultLit
   }
   deriving (Show)
 
-data MultTerm
+data MultTerm t
   = MLit MultLit
-  | MJoin TLTerm TLTerm
-  | MMeet TLTerm TLTerm
+  | MJoin t t
+  | MMeet t t
   deriving (Show)
 
-data RowEntry = REntry
+data RowEntry t = REntry
   { enPos :: Position,
     enLabel :: String,
-    enTerm :: TLTerm
+    enTerm :: t
   }
   deriving (Show)
 
-data RowTerm
+data RowTerm t
   = REmpty ProperKind
-  | RLit (NonEmpty RowEntry)
-  | RJoin TLTerm TLTerm
+  | RLit (NonEmpty (RowEntry t))
+  | RJoin t t
   deriving (Show)
 
-data TLLambda
+data TLLambda t
   = LVar Int
-  | LApp TLTerm TLTerm
-  | LAbs ProperKind TLTerm
-  | LSPair TLTerm TLTerm
-  | LPair TLTerm TLTerm
-  | LFst TLTerm
-  | LSnd TLTerm
-  | LPre TLTerm
-  | LMul TLTerm
-  | LFix SimpleKind TLTerm
-  | LMap TLTerm TLTerm
+  | LApp t t
+  | LAbs ProperKind t
+  | LSPair t t
+  | LPair t t
+  | LFst t
+  | LSnd t
+  | LPre t
+  | LMul t
+  | LFix SimpleKind t
+  | LMap t t
   deriving (Show)
 
 data Connective = CAnd | CWith | COr deriving (Show)
 
-data PreTerm
-  = PArrow TLTerm TLTerm
-  | PForall ProperKind TLTerm
-  | PSpread Connective TLTerm
+data PreTerm t
+  = PArrow t t
+  | PForall ProperKind t
+  | PSpread Connective t
   deriving (Show)
 
-data TLTerm
-  = KLam Position TLLambda
-  | KMult Position MultTerm
-  | KRow Position RowTerm
-  | KType Position TLTerm TLTerm
-  | KPretype Position PreTerm
+data TLTerm t
+  = KLam (TLLambda t)
+  | KMult (MultTerm t)
+  | KRow (RowTerm t)
+  | KType t t
+  | KPretype (PreTerm t)
   deriving (Show)
 
-shiftTLTerm :: TLTerm -> Int -> TLTerm
+shiftTLTerm :: Positioned TLTerm -> Int -> Positioned TLTerm
 shiftTLTerm = _
 
-substTLTerm :: TLTerm -> Int -> TLTerm -> TLTerm
+substTLTerm :: Positioned TLTerm -> Int -> Positioned TLTerm -> Positioned TLTerm
 substTLTerm = _
 
 type KindingResult = CtxResult [ProperKind] KindingErrors
 
-synthesizeKind :: TLTerm -> KindingResult ProperKind
-synthesizeKind (KLam _ (LVar i)) = CtxR $ Ok . (!! i)
-synthesizeKind (KLam p (LApp f x)) =
+synthesizeKind :: Positioned TLTerm -> KindingResult ProperKind
+synthesizeKind (Posed _ (KLam (LVar i))) = CtxR $ Ok . (!! i)
+synthesizeKind (Posed p (KLam (LApp f x))) =
   synthesizeKind f >>= \case
     kx :->: ky -> checkKind kx x $> ky
     k -> failWith $ KMismatch p EOperator k
-synthesizeKind (KLam _ (LAbs k t)) =
+synthesizeKind (Posed _ (KLam (LAbs k t))) =
   (k :->:) <$> mapCtx (k :) (synthesizeKind t)
-synthesizeKind (KLam _ (LSPair l r)) =
+synthesizeKind (Posed _ (KLam (LSPair l r))) =
   (Simple .) . (:*:) <$> pullSimple l <*> pullSimple r
-synthesizeKind (KLam _ (LPair l r)) =
+synthesizeKind (Posed _ (KLam (LPair l r))) =
   (:**:) <$> synthesizeKind l <*> synthesizeKind r
-synthesizeKind (KLam p (LFst t)) =
+synthesizeKind (Posed p (KLam (LFst t))) =
   synthesizeKind t >>= \case
     kl :**: _ -> pure kl
     Simple (kl :*: _) -> pure $ Simple kl
     k -> failWith $ KMismatch p EPair k
-synthesizeKind (KLam p (LSnd t)) =
+synthesizeKind (Posed p (KLam (LSnd t))) =
   synthesizeKind t >>= \case
     _ :**: kr -> pure kr
     Simple (_ :*: kr) -> pure $ Simple kr
     k -> failWith $ KMismatch p EPair k
-synthesizeKind (KLam _ (LPre t)) = checkKind (Simple Type) t $> Simple Pretype
-synthesizeKind (KLam _ (LMul t)) = checkKind (Simple Type) t $> Mult
-synthesizeKind (KLam _ (LFix k t)) =
+synthesizeKind (Posed _ (KLam (LPre t))) =
+  checkKind (Simple Type) t $> Simple Pretype
+synthesizeKind (Posed _ (KLam (LMul t))) = checkKind (Simple Type) t $> Mult
+synthesizeKind (Posed _ (KLam (LFix k t))) =
   mapCtx (Simple k :) (checkKind (Simple k) t) $> Simple k
-synthesizeKind (KLam p (LMap f r)) =
+synthesizeKind (Posed p (KLam (LMap f r))) =
   synthesizeKind f >>= \case
     kx :->: ky -> checkKind (Row kx) r $> Row ky
     k -> failWith $ KMismatch p EOperator k
-synthesizeKind (KMult _ (MLit _)) = pure Mult
-synthesizeKind (KMult _ (MJoin m m')) =
+synthesizeKind (Posed _ (KMult (MLit _))) = pure Mult
+synthesizeKind (Posed _ (KMult (MJoin m m'))) =
   checkKind Mult m *> checkKind Mult m' $> Mult
-synthesizeKind (KMult _ (MMeet m m')) =
+synthesizeKind (Posed _ (KMult (MMeet m m'))) =
   checkKind Mult m *> checkKind Mult m' $> Mult
-synthesizeKind (KRow _ (REmpty k)) = pure $ Row k
-synthesizeKind (KRow _ (RLit (r :| rs))) = do
+synthesizeKind (Posed _ (KRow (REmpty k))) = pure $ Row k
+synthesizeKind (Posed _ (KRow (RLit (r :| rs)))) = do
   k <- synthesizeKind (enTerm r)
   forM_ rs (checkKind k . enTerm) $> Row k
-synthesizeKind (KRow p (RJoin l r)) = do
+synthesizeKind (Posed p (KRow (RJoin l r))) = do
   kl <- pullRow l
   kr <- pullRow r
   if kl == kr
     then pure $ Row kl
     else failWith $ KDifferentRows p kl kr
-synthesizeKind (KType _ t m) =
+synthesizeKind (Posed _ (KType t m)) =
   checkKind (Simple Pretype) t *> checkKind Mult m $> Simple Type
-synthesizeKind (KPretype _ (PArrow f x)) =
+synthesizeKind (Posed _ (KPretype (PArrow f x))) =
   checkKind (Simple Type) f *> checkKind (Simple Type) x $> Simple Pretype
-synthesizeKind (KPretype _ (PForall k f)) =
+synthesizeKind (Posed _ (KPretype (PForall k f))) =
   mapCtx (k :) (checkKind (Simple Type) f) $> Simple Pretype
-synthesizeKind (KPretype _ (PSpread _ r)) = pullRow r $> Simple Pretype
+synthesizeKind (Posed _ (KPretype (PSpread _ r))) = pullRow r $> Simple Pretype
 
-checkKind :: ProperKind -> TLTerm -> KindingResult ()
+checkKind :: ProperKind -> Positioned TLTerm -> KindingResult ()
 checkKind k t = do
   k' <- synthesizeKind t
   if k == k'
     then pure ()
-    else failWith $ KMismatch (getPos t) (EKind k) k'
+    else failWith $ KMismatch (pos t) (EKind k) k'
 
 failWith = CtxR . const . Err . pure
 
 pullRow t =
   synthesizeKind t >>= \case
     Row k -> pure k
-    k -> failWith $ KMismatch (getPos t) ERow k
+    k -> failWith $ KMismatch (pos t) ERow k
 
 pullSimple t =
   synthesizeKind t >>= \case
     Simple k -> pure k
-    k -> failWith $ KMismatch (getPos t) ESimple k
+    k -> failWith $ KMismatch (pos t) ESimple k
 
-getPos (KLam p _) = p
-getPos (KMult p _) = p
-getPos (KRow p _) = p
-getPos (KType p _ _) = p
-getPos (KPretype p _) = p
-
-type Mult = TLTerm
-type Type = TLTerm
+type Mult = Positioned TLTerm
+type Type = Positioned TLTerm
 
 checkSup :: Foldable f => Mult -> f Type -> KindingResult ()
 checkSup = error "TODO"
@@ -175,5 +169,5 @@ checkSup = error "TODO"
 upperBound :: Int -> MultLit
 upperBound = MultLit <$> (>= 1) <*> (<= 1)
 
-upperBound' :: Position -> Int -> TLTerm
-upperBound' p = KMult p . MLit . upperBound
+upperBound' :: Position -> Int -> Positioned TLTerm
+upperBound' p = Posed p . KMult . MLit . upperBound

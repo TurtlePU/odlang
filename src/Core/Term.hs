@@ -1,6 +1,4 @@
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
 
 module Core.Term where
 
@@ -20,7 +18,7 @@ data RowKey
 newtype IndexedBag k v = IBag [(k, v)]
   deriving (Show, Functor, Foldable, Traversable)
 
-type RowBag = IndexedBag RowKey Term
+type RowBag = IndexedBag RowKey
 
 withValues :: Functor f => ([v] -> f [v']) -> IndexedBag k v -> f (IndexedBag k v')
 withValues g (IBag kv) = IBag . zip (fst <$> kv) <$> g (snd <$> kv)
@@ -43,20 +41,20 @@ xs !*! s = elems $ foldr putAt mempty $ zip xs s
   where
     putAt = uncurry $ \x -> alter ((x :) . fromMaybe mempty)
 
-type Row = TLTerm
+type Row = Positioned TLTerm
 
-data Term
-  = TVar Position
-  | TAbs Position Int Type Term Mult
-  | TApp Position Split Term Term
-  | TGen Position ProperKind Term Mult
-  | TInst Position Term TLTerm
-  | TAndI Position SplitN RowBag Mult
-  | TAndE Position Split Term [RowKey] Term
-  | TWithI Position RowBag Mult
-  | TWithE Position Term RowKey
-  | TOrI Position RowKey Term Row Mult
-  | TOrE Position Split Term RowBag
+data Term t
+  = TVar
+  | TAbs Int Type t Mult
+  | TApp Split t t
+  | TGen ProperKind t Mult
+  | TInst t (Positioned TLTerm)
+  | TAndI SplitN (RowBag t) Mult
+  | TAndE Split t [RowKey] t
+  | TWithI (RowBag t) Mult
+  | TWithE t RowKey
+  | TOrI RowKey t Row Mult
+  | TOrE Split t (RowBag t)
 
 data TypingError
   = Kinding KindingError
@@ -65,50 +63,51 @@ type TypingErrors = NonEmpty TypingError
 
 type TypingResult = CtxResult ([ProperKind], [Type]) TypingErrors
 
-synthesizeType :: Term -> TypingResult Type
-synthesizeType (TVar _) = CtxR $ \(_, [ty]) -> pure ty
-synthesizeType (TAbs p n ty tm mul) = do
+synthesizeType :: Positioned Term -> TypingResult Type
+synthesizeType (Posed _ TVar) = CtxR $ \(_, [ty]) -> pure ty
+synthesizeType (Posed p (TAbs n ty tm mul)) = do
   isType ty
   getCtx >>= checkSup' mul
   checkSup' (upperBound' p n) [ty]
-  KPretype p . PArrow ty <$> modifyCtx (replicate n ty ++) (synthesizeType tm)
-synthesizeType (TApp _ s f x) = do
+  Posed p . KPretype . PArrow ty
+    <$> modifyCtx (replicate n ty ++) (synthesizeType tm)
+synthesizeType (Posed _ (TApp s f x)) = do
   (tyf, tyx) <- splitCtx s (synthesizeType f) $ pairM (synthesizeType x)
   (tyarg, tyres) <- pullArrow tyf
   checkTyEq tyarg tyx
   pure tyres
-synthesizeType (TGen p k tm mul) = do
+synthesizeType (Posed p (TGen k tm mul)) = do
   getCtx >>= checkSup' mul
-  KPretype p . PForall k <$> shiftCtx k (synthesizeType tm)
+  Posed p . KPretype . PForall k <$> shiftCtx k (synthesizeType tm)
   where
     shiftCtx k = mapCtx $ bimap (k :) $ fmap $ flip shiftTLTerm 1
-synthesizeType (TInst p tm arg) = do
+synthesizeType (Posed p (TInst tm arg)) = do
   (k, ty) <- synthesizeType tm >>= pullForall
   fromKinding $ checkKind k arg
   pure $ substTLTerm ty 0 arg
-synthesizeType (TAndI p s rs mul) = do
+synthesizeType (Posed p (TAndI s rs mul)) = do
   tys <- withValues (splitCtxN s . fmap synthesizeType) rs
   checkSup' mul tys
   pure $ mkAlgebraic CAnd p tys
-synthesizeType (TAndE p s tup order tm) =
+synthesizeType (Posed p (TAndE s tup order tm)) =
   splitCtx s (synthesizeType tup) $ \tytup -> do
     addend <- reorder tytup order
     modifyCtx (addend ++) (synthesizeType tm)
-synthesizeType (TWithI p rs mul) = do
+synthesizeType (Posed p (TWithI rs mul)) = do
   tys <- traverse synthesizeType rs
   checkSup' mul tys
   pure $ mkAlgebraic CWith p tys
-synthesizeType (TWithE p tm key) = do
+synthesizeType (Posed p (TWithE tm key)) = do
   ty <- synthesizeType tm
   pickTy key ty
-synthesizeType (TOrI p key tm row mul) = _
-synthesizeType (TOrE p s tm rs) = _
+synthesizeType (Posed p (TOrI key tm row mul)) = _
+synthesizeType (Posed p (TOrE s tm rs)) = _
 
 pairM :: Monad m => m b -> a -> m (a, b)
 pairM b = flip fmap b . (,)
 
 mkAlgebraic :: Connective -> Position -> IndexedBag RowKey Type -> Type
-mkAlgebraic c p = KPretype p . PSpread c . KRow p . _
+mkAlgebraic c p = Posed p . KPretype . PSpread c . Posed p . KRow . _
 
 splitCtx :: Split -> TypingResult a -> (a -> TypingResult b) -> TypingResult b
 splitCtx s ra rb = CtxR $ \(ks, tys) ->

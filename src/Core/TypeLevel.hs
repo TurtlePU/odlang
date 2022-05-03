@@ -5,6 +5,7 @@ module Core.TypeLevel where
 import Control.Monad (forM_)
 import Core.Kind
 import Core.Multiplicity
+import Core.Row
 import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty (..))
 import Position
@@ -24,19 +25,6 @@ data KindingError
   deriving (Show)
 
 type KindingErrors = NonEmpty KindingError
-
-data RowEntry t = REntry
-  { enPos :: Position,
-    enLabel :: String,
-    enTerm :: t
-  }
-  deriving (Show)
-
-data RowTerm t
-  = REmpty ProperKind
-  | RLit (NonEmpty (RowEntry t))
-  | RJoin t t
-  deriving (Show)
 
 data TLLambda t
   = LVar Int
@@ -108,16 +96,7 @@ synthesizeKind (Posed p (KLam (LMap f r))) =
     kx :->: ky -> checkKind (Row kx) r $> Row ky
     k -> failWith $ KMismatch p EOperator k
 synthesizeKind (Posed _ (KMult m)) = forM_ m (checkKind Mult) $> Mult
-synthesizeKind (Posed _ (KRow (REmpty k))) = pure $ Row k
-synthesizeKind (Posed _ (KRow (RLit (r :| rs)))) = do
-  k <- synthesizeKind (enTerm r)
-  forM_ rs (checkKind k . enTerm) $> Row k
-synthesizeKind (Posed p (KRow (RJoin l r))) = do
-  kl <- pullRow l
-  kr <- pullRow r
-  if kl == kr
-    then pure $ Row kl
-    else failWith $ KDifferentRows p kl kr
+synthesizeKind (Posed _ (KRow r)) = _
 synthesizeKind (Posed _ (KType t m)) =
   checkKind (Simple Pretype) t *> checkKind Mult m $> Simple Type
 synthesizeKind (Posed _ (KPretype (PArrow f x))) =
@@ -146,6 +125,7 @@ pullSimple t =
     k -> failWith $ KMismatch (pos t) ESimple k
 
 type Mult = Positioned TLTerm
+
 type Type = Positioned TLTerm
 
 checkSup :: Foldable f => Mult -> f Type -> KindingResult ()

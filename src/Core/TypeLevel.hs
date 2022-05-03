@@ -4,6 +4,7 @@ module Core.TypeLevel where
 
 import Control.Monad (forM_)
 import Core.Kind
+import Core.Multiplicity
 import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty (..))
 import Position
@@ -23,18 +24,6 @@ data KindingError
   deriving (Show)
 
 type KindingErrors = NonEmpty KindingError
-
-data MultLit = MultLit
-  { noWeakening :: Bool,
-    noContraction :: Bool
-  }
-  deriving (Show)
-
-data MultTerm t
-  = MLit MultLit
-  | MJoin t t
-  | MMeet t t
-  deriving (Show)
 
 data RowEntry t = REntry
   { enPos :: Position,
@@ -118,11 +107,7 @@ synthesizeKind (Posed p (KLam (LMap f r))) =
   synthesizeKind f >>= \case
     kx :->: ky -> checkKind (Row kx) r $> Row ky
     k -> failWith $ KMismatch p EOperator k
-synthesizeKind (Posed _ (KMult (MLit _))) = pure Mult
-synthesizeKind (Posed _ (KMult (MJoin m m'))) =
-  checkKind Mult m *> checkKind Mult m' $> Mult
-synthesizeKind (Posed _ (KMult (MMeet m m'))) =
-  checkKind Mult m *> checkKind Mult m' $> Mult
+synthesizeKind (Posed _ (KMult m)) = forM_ m (checkKind Mult) $> Mult
 synthesizeKind (Posed _ (KRow (REmpty k))) = pure $ Row k
 synthesizeKind (Posed _ (KRow (RLit (r :| rs)))) = do
   k <- synthesizeKind (enTerm r)

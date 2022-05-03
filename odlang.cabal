@@ -26,6 +26,8 @@ source-repository head
 library
   exposed-modules:
       Core.Kind
+      Core.Multiplicity
+      Core.Row
       Core.Term
       Core.TypeLevel
       HashMultiMap
@@ -42,6 +44,7 @@ library
       base >=4.7 && <5
     , hashable
     , megaparsec
+    , multiset
     , text
     , unordered-containers
   default-language: Haskell2010
@@ -57,6 +60,7 @@ executable odlang-exe
       base >=4.7 && <5
     , hashable
     , megaparsec
+    , multiset
     , odlang
     , text
     , unordered-containers
@@ -74,6 +78,7 @@ test-suite odlang-test
       base >=4.7 && <5
     , hashable
     , megaparsec
+    , multiset
     , odlang
     , text
     , unordered-containers

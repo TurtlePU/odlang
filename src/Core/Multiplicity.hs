@@ -3,7 +3,7 @@
 
 module Core.Multiplicity where
 
-import Control.Applicative ((<|>))
+import Control.Applicative (liftA2, (<|>))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable (asum)
 import Data.HashMap.Strict (HashMap)
@@ -38,7 +38,7 @@ mkCNF :: (Eq a, Hashable a) => a -> CNF a
 mkCNF = MkCNF . pure . singleton
 
 instance (Eq a, Hashable a) => Boolean (CNF a) where
-  join (MkCNF l) (MkCNF r) = MkCNF ((<>) <$> l <*> r)
+  join (MkCNF l) (MkCNF r) = MkCNF (liftA2 (<>) l r)
   meet (MkCNF l) (MkCNF r) = MkCNF (l <> r)
   true = MkCNF []
   false = MkCNF [mempty]
@@ -50,12 +50,12 @@ mkDNF = MkDNF . pure . singleton
 
 instance (Eq a, Hashable a) => Boolean (DNF a) where
   join (MkDNF l) (MkDNF r) = MkDNF (l <> r)
-  meet (MkDNF l) (MkDNF r) = MkDNF ((<>) <$> l <*> r)
+  meet (MkDNF l) (MkDNF r) = MkDNF (liftA2 (<>) l r)
   true = MkDNF [mempty]
   false = MkDNF []
 
 checkLE :: (Eq a, Hashable a) => DNF a -> CNF a -> Maybe (HashMap a Bool)
-checkLE (MkDNF dnf) (MkCNF cnf) = asum $ findSub <$> dnf <*> cnf
+checkLE (MkDNF dnf) (MkCNF cnf) = asum (liftA2 findSub dnf cnf)
   where
     findSub conj disj =
       if HashSet.null (conj `intersection` disj)

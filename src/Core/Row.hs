@@ -25,34 +25,38 @@ instance Bifoldable RowT where
     RVar x -> g x
     RJoin a b -> bifoldMap f g a <> bifoldMap f g b
 
+toNonEmpty :: (l -> b) -> (a -> b) -> RowT l a -> NonEmpty b
+toNonEmpty f g = \case
+  RLit l -> f l :| []
+  RVar x -> g x :| []
+  RJoin a b -> toNonEmpty f g a <> toNonEmpty f g b
+
 data RowLit k t
   = REmpty k
   | REntry EntryKey t
   deriving (Show)
 
-instance Bifoldable RowLit where
-  bifoldMap f g = \case
-    REmpty k -> f k
-    REntry _ t -> g t
-
 type RowTerm t = RowT (RowLit ProperKind t) t
 
-collectK :: Applicative f => (t -> f ProperKind) -> RowTerm t -> f [ProperKind]
-collectK g = sequenceA . bifoldMap (pure . fmap Row . visit) (pure . g)
+collectK ::
+  Applicative f => (t -> f ProperKind) -> RowTerm t -> f (NonEmpty ProperKind)
+collectK g = sequenceA . toNonEmpty litK g
   where
-    visit = bifoldr (const . pure) (const . g) undefined
+    litK = \case
+      REmpty k -> pure k
+      REntry _ t -> g t
 
 checkRowEQ :: (t -> t -> Bool) -> RowTerm t -> RowTerm t -> [RowEqError]
-checkRowEQ f l r =
+checkRowEQ eq l r =
   let MkRow (Multi ll) lv = intoRow l
       MkRow (Multi rl) rv = intoRow r
       eqs = HashMap.intersectionWith checkBagEQ' ll rl
    in [EKeys | HashMap.keysSet ll /= HashMap.keysSet rl]
         ++ HashMap.foldMapWithKey mkUnder eqs
-        ++ [EVars | not (checkBagEQ f lv rv)]
+        ++ [EVars | not (checkBagEQ eq lv rv)]
   where
     intoRow = bifoldMap fromLit fromVar
-    checkBagEQ' l r = checkBagEQ f (NonEmpty.toList l) (NonEmpty.toList r)
+    checkBagEQ' l r = checkBagEQ eq (NonEmpty.toList l) (NonEmpty.toList r)
     fromLit = \case
       REmpty _ -> mempty
       REntry k v -> fromEntry k v

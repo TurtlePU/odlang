@@ -25,7 +25,6 @@ dependencies:
 - megaparsec
 - unordered-containers
 - hashable
-- multiset
 
 library:
   source-dirs: src

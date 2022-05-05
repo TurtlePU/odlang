@@ -5,26 +5,12 @@ module Core.TypeLevel where
 import Control.Monad (forM_)
 import Core.Kind
 import Core.Multiplicity
+import Core.Pretype
 import Core.Row
 import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty (..), nub)
 import Position
 import Result
-
-data Expected
-  = EKind ProperKind
-  | EOperator
-  | EPair
-  | ERow
-  | ESimple
-  deriving (Show)
-
-data KindingError
-  = KMismatch Position ProperKind Expected
-  | KDifferentRows Position (NonEmpty ProperKind)
-  deriving (Show)
-
-type KindingErrors = NonEmpty KindingError
 
 data TLLambda t
   = LVar Int
@@ -40,29 +26,18 @@ data TLLambda t
   | LMap t t
   deriving (Show)
 
-data Connective = CAnd | CWith | COr deriving (Show)
-
-data PreTerm t
-  = PArrow t t
-  | PForall ProperKind t
-  | PSpread Connective t
-  deriving (Show)
-
 data TLTerm t
   = KLam (TLLambda t)
   | KMult (MultTerm t)
-  | KRow (RowTerm t)
+  | KRow (RowTerm t t)
   | KType t t
-  | KPretype (PreTerm t)
-  deriving (Show)
+  | KPretype (PreTypeT t t t t)
 
 shiftTLTerm :: Positioned TLTerm -> Int -> Positioned TLTerm
 shiftTLTerm = _
 
 substTLTerm :: Positioned TLTerm -> Int -> Positioned TLTerm -> Positioned TLTerm
 substTLTerm = _
-
-type KindingResult = CtxResult [ProperKind] KindingErrors
 
 synthesizeKind :: Positioned TLTerm -> KindingResult ProperKind
 synthesizeKind (Posed _ (KLam (LVar i))) = CtxR $ Ok . (!! i)
@@ -95,32 +70,17 @@ synthesizeKind (Posed p (KLam (LMap f r))) =
   synthesizeKind f >>= \case
     kx :->: ky -> checkKind (Row kx) r $> Row ky
     k -> failWith $ KMismatch p k EOperator
-synthesizeKind (Posed _ (KMult m)) = forM_ m (checkKind Mult) $> Mult
-synthesizeKind (Posed p (KRow r)) = do
-  ks <- collectK synthesizeKind r
-  case nub ks of
-    Row k :| [] -> pure (Row k)
-    k :| [] -> failWith (KMismatch p k ERow)
-    ks -> failWith (KDifferentRows p ks)
-synthesizeKind (Posed _ (KType t m)) =
-  checkKind (Simple Pretype) t *> checkKind Mult m $> Simple Type
-synthesizeKind (Posed _ (KPretype (PArrow f x))) =
-  checkKind (Simple Type) f *> checkKind (Simple Type) x $> Simple Pretype
-synthesizeKind (Posed _ (KPretype (PForall k f))) =
-  mapCtx (k :) (checkKind (Simple Type) f) $> Simple Pretype
-synthesizeKind (Posed p (KPretype (PSpread _ r))) =
-  synthesizeKind r >>= \case
-    Row (Simple Type) -> pure (Simple Pretype)
-    k -> failWith $ KMismatch p k $ EKind $ Row $ Simple Type
+synthesizeKind (Posed _ (KMult m)) = checkMultKind synthesizeKind m
+synthesizeKind (Posed p (KRow r)) = synthesizeRowKind synthesizeKind synthesizeKind p r
+synthesizeKind (Posed _ (KType _ _)) = _
+synthesizeKind (Posed _ (KPretype _)) = _
 
 checkKind :: ProperKind -> Positioned TLTerm -> KindingResult ()
-checkKind k t = do
-  k' <- synthesizeKind t
-  if k == k'
-    then pure ()
-    else failWith $ KMismatch (pos t) k' (EKind k)
+checkKind k = intoCheck k synthesizeKind
 
-failWith = CtxR . const . Err . pure
+nonEmpty ::
+  (ProperKind -> a) -> (r -> a) -> (t -> a) -> RowTerm r t -> NonEmpty a
+nonEmpty f g h = trifold (pure . f) (pure . g . snd) (pure . h)
 
 pullSimple t =
   synthesizeKind t >>= \case

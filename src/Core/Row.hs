@@ -2,53 +2,52 @@
 
 module Core.Row where
 
-import Core.Kind (ProperKind (Row))
-import Data.Bifoldable (Bifoldable (..))
+import Core.Kind
 import Data.EqBag (EqBag)
 import qualified Data.EqBag as EqBag
+import Data.Function (fix)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.HashMultiMap (HashMultiMap (..))
 import qualified Data.HashMultiMap as HashMultiMap
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
+import Position (Position, Positioned)
+
+data RowT k e r
+  = REmpty k
+  | REntry e
+  | RVar r
+  | RJoin (RowT k e r) (RowT k e r)
+  deriving (Show)
+
+trifold :: Semigroup s => (k -> s) -> (e -> s) -> (r -> s) -> RowT k e r -> s
+trifold f g h = fix $ \rec -> \case
+  REmpty k -> f k
+  REntry e -> g e
+  RVar x -> h x
+  RJoin l r -> rec l <> rec r
 
 type EntryKey = String
 
-data RowT l a
-  = RLit l
-  | RVar a
-  | RJoin (RowT l a) (RowT l a)
-  deriving (Show)
+type RowTerm t r = RowT ProperKind (EntryKey, t) r
 
-instance Bifoldable RowT where
-  bifoldMap f g = \case
-    RLit l -> f l
-    RVar x -> g x
-    RJoin a b -> bifoldMap f g a <> bifoldMap f g b
+synthesizeRowKind ::
+  (Positioned ft -> KindingResult ProperKind) ->
+  (Positioned fr -> KindingResult ProperKind) ->
+  Position ->
+  RowTerm (Positioned ft) (Positioned fr) ->
+  KindingResult ProperKind
+synthesizeRowKind g h p r = do
+  ks <-
+    sequenceA $
+      trifold (pure . pure . Row) (pure . fmap Row . g . snd) (pure . h) r
+  case NonEmpty.nub ks of
+    Row k :| [] -> pure (Row k)
+    k :| [] -> failWith (KMismatch p k ERow)
+    ks -> failWith (KDifferentRows p ks)
 
-toNonEmpty :: (l -> b) -> (a -> b) -> RowT l a -> NonEmpty b
-toNonEmpty f g = \case
-  RLit l -> f l :| []
-  RVar x -> g x :| []
-  RJoin a b -> toNonEmpty f g a <> toNonEmpty f g b
-
-data RowLit k t
-  = REmpty k
-  | REntry EntryKey t
-  deriving (Show)
-
-type RowTerm t = RowT (RowLit ProperKind t) t
-
-collectK ::
-  Applicative f => (t -> f ProperKind) -> RowTerm t -> f (NonEmpty ProperKind)
-collectK g = sequenceA . toNonEmpty litK g
-  where
-    litK = \case
-      REmpty k -> pure k
-      REntry _ t -> g t
-
-checkRowEQ :: Eq t => RowTerm t -> RowTerm t -> [RowEqError]
+checkRowEQ :: (Eq t, Eq r) => RowTerm t r -> RowTerm t r -> [RowEqError]
 checkRowEQ l r =
   let (lLit, lVar) = intoRow l
       (rLit, rVar) = intoRow r
@@ -57,12 +56,8 @@ checkRowEQ l r =
         ++ HashMap.foldMapWithKey mkUnder litNeqs
         ++ [EVars | lVar /= rVar]
   where
-    intoRow term =
-      let MkRow (Multi lit) var = bifoldMap fromLit fromVar term
-       in (lit, var)
-    fromLit = \case
-      REmpty _ -> mempty
-      REntry k v -> fromEntry k v
+    intoRow = extract . trifold (const mempty) (uncurry fromEntry) fromVar
+    extract (MkRow (Multi lit) var) = (lit, var)
     mkUnder l = \case
       True -> [EUnder l]
       False -> []

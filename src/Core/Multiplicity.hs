@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Core.Multiplicity where
@@ -12,7 +13,7 @@ import Data.HashMap.Strict (HashMap)
 import Data.HashSet (HashSet, intersection, singleton, toMap)
 import qualified Data.HashSet as HashSet
 import Data.Hashable (Hashable)
-import Position (Positioned)
+import Position
 
 class Boolean a where
   join :: a -> a -> a
@@ -38,7 +39,7 @@ data MultT l a
   | MVar a
   | MJoin (MultT l a) (MultT l a)
   | MMeet (MultT l a) (MultT l a)
-  deriving (Show, Foldable)
+  deriving (Show, Foldable, Functor)
 
 eval :: Boolean b => MultT Bool b -> b
 eval (MLit l) = fromBool l
@@ -61,11 +62,8 @@ data MultLit = MultLit
 
 type MultTerm = MultT MultLit
 
-checkMultKind ::
-  (Positioned f -> KindingResult ProperKind) ->
-  MultTerm (Positioned f) ->
-  KindingResult ProperKind
-checkMultKind s m = for_ m (intoCheck Mult s) $> Mult
+checkMultKind :: MultTerm (PosResult ProperKind) -> PosResult ProperKind
+checkMultKind m = for_ m (intoCheck Mult) $> Mult
 
 checkEQ ::
   (Eq a, Hashable a) => MultTerm a -> MultTerm a -> Maybe (HashMap a MultLit)

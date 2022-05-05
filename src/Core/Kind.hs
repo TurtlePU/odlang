@@ -1,7 +1,9 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Core.Kind where
 
 import Data.List.NonEmpty (NonEmpty)
-import Position (Position, Positioned (..))
+import Position (Position, Positioned (..), getPosition)
 import Result (CtxResult (..), Result (..))
 
 data SimpleKind
@@ -27,19 +29,37 @@ data Expected
   deriving (Show)
 
 data KindingError
-  = KMismatch Position ProperKind Expected
-  | KDifferentRows Position (NonEmpty ProperKind)
+  = KMismatch ProperKind Expected Position
+  | KDifferentRows (NonEmpty ProperKind) Position
   deriving (Show)
 
 type KindingErrors = NonEmpty KindingError
 
 type KindingResult = CtxResult [ProperKind] KindingErrors
 
-intoCheck :: ProperKind -> (Positioned f -> KindingResult ProperKind) -> Positioned f -> KindingResult ()
-intoCheck k g t = do
-  k' <- g t
+type PosResult = CtxResult ([ProperKind], Position) KindingErrors
+
+intoCheck :: ProperKind -> PosResult ProperKind -> PosResult ()
+intoCheck k g = do
+  k' <- g
   if k == k'
     then pure ()
-    else failWith $ KMismatch (pos t) k' $ EKind k
+    else failWith $ KMismatch k' $ EKind k
 
-failWith = CtxR . const . Err . pure
+failWith f = getPosition >>= CtxR . const . Err . pure . f
+
+pullArrow :: ProperKind -> PosResult (ProperKind, ProperKind)
+pullArrow = \case
+  kx :->: ky -> pure (kx, ky)
+  k -> failWith (KMismatch k EOperator)
+
+pullSimple :: ProperKind -> PosResult SimpleKind
+pullSimple = \case
+  Simple k -> pure k
+  k -> failWith (KMismatch k ESimple)
+
+pullPair :: ProperKind -> PosResult (ProperKind, ProperKind)
+pullPair = \case
+  kl :**: kr -> pure (kl, kr)
+  Simple (kl :*: kr) -> pure (Simple kl, Simple kr)
+  k -> failWith (KMismatch k EPair)

@@ -4,12 +4,14 @@ module Core.Row where
 
 import Core.Kind (ProperKind (Row))
 import Data.Bifoldable (Bifoldable (..))
+import Data.EqBag (EqBag)
+import qualified Data.EqBag as EqBag
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
-import Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
 import Data.HashMultiMap (HashMultiMap (..))
 import qualified Data.HashMultiMap as HashMultiMap
+import Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.List.NonEmpty as NonEmpty
 
 type EntryKey = String
 
@@ -46,17 +48,18 @@ collectK g = sequenceA . toNonEmpty litK g
       REmpty k -> pure k
       REntry _ t -> g t
 
-checkRowEQ :: (t -> t -> Bool) -> RowTerm t -> RowTerm t -> [RowEqError]
-checkRowEQ eq l r =
-  let MkRow (Multi ll) lv = intoRow l
-      MkRow (Multi rl) rv = intoRow r
-      eqs = HashMap.intersectionWith checkBagEQ' ll rl
-   in [EKeys | HashMap.keysSet ll /= HashMap.keysSet rl]
-        ++ HashMap.foldMapWithKey mkUnder eqs
-        ++ [EVars | not (checkBagEQ eq lv rv)]
+checkRowEQ :: Eq t => RowTerm t -> RowTerm t -> [RowEqError]
+checkRowEQ l r =
+  let (lLit, lVar) = intoRow l
+      (rLit, rVar) = intoRow r
+      litNeqs = HashMap.intersectionWith (/=) lLit rLit
+   in [EKeys | HashMap.keysSet lLit /= HashMap.keysSet rLit]
+        ++ HashMap.foldMapWithKey mkUnder litNeqs
+        ++ [EVars | lVar /= rVar]
   where
-    intoRow = bifoldMap fromLit fromVar
-    checkBagEQ' l r = checkBagEQ eq (NonEmpty.toList l) (NonEmpty.toList r)
+    intoRow term =
+      let MkRow (Multi lit) var = bifoldMap fromLit fromVar term
+       in (lit, var)
     fromLit = \case
       REmpty _ -> mempty
       REntry k v -> fromEntry k v
@@ -64,35 +67,24 @@ checkRowEQ eq l r =
       True -> [EUnder l]
       False -> []
 
-checkBagEQ :: (t -> t -> Bool) -> [t] -> [t] -> Bool
-checkBagEQ eq l r = checkCompsEq (intoComps l) (intoComps r)
-  where
-    intoComps = foldr compInsert []
-    compInsert x = \case
-      [] -> [x :| []]
-      (y : ys) ->
-        if x `eq` NonEmpty.head y
-          then NonEmpty.cons x y : ys
-          else y : compInsert x ys
-    checkCompsEq l r = length l == length r && all (flip any l . compEq) r
-    compEq xs ys =
-      length xs == length ys && NonEmpty.head xs `eq` NonEmpty.head ys
-
 data Row t r = MkRow
-  { rowLit :: HashMultiMap EntryKey (NonEmpty t),
-    rowVar :: [r]
+  { rowLit :: HashMultiMap EntryKey (EqBag t),
+    rowVar :: EqBag r
   }
 
 fromEntry :: EntryKey -> t -> Row t r
-fromEntry k v = MkRow (HashMultiMap.singleton k (v :| [])) []
+fromEntry k =
+  flip MkRow EqBag.empty
+    . HashMultiMap.singleton k
+    . EqBag.singleton
 
 fromVar :: r -> Row t r
-fromVar x = MkRow HashMultiMap.empty [x]
+fromVar = MkRow HashMultiMap.empty . EqBag.singleton
 
-instance Semigroup (Row t r) where
+instance (Eq t, Eq r) => Semigroup (Row t r) where
   MkRow l v <> MkRow l' v' = MkRow (l <> l') (v <> v')
 
-instance Monoid (Row t r) where
+instance (Eq t, Eq r) => Monoid (Row t r) where
   mempty = MkRow mempty mempty
 
 data RowEqError = EVars | EKeys | EUnder EntryKey

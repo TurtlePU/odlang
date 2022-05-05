@@ -30,6 +30,7 @@ library
       Core.Row
       Core.Term
       Core.TypeLevel
+      Data.EqBag
       Data.HashMultiMap
       Lib
       Parser

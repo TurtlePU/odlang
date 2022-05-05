@@ -8,8 +8,8 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
-import HashMultiMap (HashMultiMap (..))
-import qualified HashMultiMap
+import Data.HashMultiMap (HashMultiMap (..))
+import qualified Data.HashMultiMap as HashMultiMap
 
 type EntryKey = String
 

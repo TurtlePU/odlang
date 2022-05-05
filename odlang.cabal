@@ -30,7 +30,7 @@ library
       Core.Row
       Core.Term
       Core.TypeLevel
-      HashMultiMap
+      Data.HashMultiMap
       Lib
       Parser
       Position

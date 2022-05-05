@@ -1,4 +1,4 @@
-module HashMultiMap where
+module Data.HashMultiMap where
 
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap

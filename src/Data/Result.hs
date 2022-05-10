@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 
-module Result where
+module Data.Result where
 
 import Control.Applicative (Alternative (..), Applicative (..))
 import Control.Monad (Monad (..), (>=>))

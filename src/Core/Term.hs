@@ -10,8 +10,8 @@ import Data.Bifunctor
 import Data.Either (partitionEithers)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (fromMaybe)
-import Position
-import Result
+import Data.Position
+import Data.Result
 
 data RowKey
 

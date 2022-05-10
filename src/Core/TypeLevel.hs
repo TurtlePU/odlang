@@ -12,8 +12,8 @@ import Core.Row
 import Data.Bifunctor (Bifunctor (first, second))
 import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty (..), nub)
-import Position
-import Result
+import Data.Position
+import Data.Result
 
 data TLLambda t
   = LVar Int

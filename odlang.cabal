@@ -33,10 +33,10 @@ library
       Core.TypeLevel
       Data.EqBag
       Data.HashMultiMap
+      Data.Position
+      Data.Result
       Lib
       Parser
-      Position
-      Result
       Tree
   other-modules:
       Paths_odlang

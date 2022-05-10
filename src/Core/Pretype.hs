@@ -8,7 +8,7 @@ import Core.Multiplicity (MultTerm, checkMultKind)
 import Core.Row (RowTerm, RowTerm' (MkRowTerm'), synthesizeRowKind)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Functor (($>))
-import Result (mapCtx)
+import Data.Result (mapCtx)
 
 data Connective = CAnd | CWith | COr deriving (Show)
 

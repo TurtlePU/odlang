@@ -13,8 +13,8 @@ import Data.HashMultiMap (HashMultiMap (..))
 import qualified Data.HashMultiMap as HashMultiMap
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
-import Position (Position, Positioned, getPosition)
-import Result (mapCtx)
+import Data.Position (Position, Positioned, getPosition)
+import Data.Result (mapCtx)
 
 data RowT k e r
   = REmpty k

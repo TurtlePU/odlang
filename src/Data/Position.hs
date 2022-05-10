@@ -1,9 +1,9 @@
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE TupleSections #-}
 
-module Position where
+module Data.Position where
 
-import Result
+import Data.Result
 
 data Position
 

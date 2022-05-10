@@ -13,7 +13,7 @@ import Data.HashMap.Strict (HashMap)
 import Data.HashSet (HashSet, intersection, singleton, toMap)
 import qualified Data.HashSet as HashSet
 import Data.Hashable (Hashable)
-import Position
+import Data.Position
 
 class Boolean a where
   join :: a -> a -> a

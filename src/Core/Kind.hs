@@ -3,8 +3,8 @@
 module Core.Kind where
 
 import Data.List.NonEmpty (NonEmpty)
-import Position (Position, Positioned (..), getPosition)
-import Result (CtxResult (..), Result (..))
+import Data.Position (Position, Positioned (..), getPosition)
+import Data.Result (CtxResult (..), Result (..))
 
 data SimpleKind
   = Pretype

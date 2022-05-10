@@ -59,6 +59,9 @@ synthesizeRowKind (MkRowTerm' (MkRowTerm r)) = do
     k :| [] -> failWith (KMismatch k ERow)
     ks -> failWith (KDifferentRows ks)
 
+instance (Eq t, Eq r) => Eq (RowTerm t r) where
+  t == t' = null (checkRowEQ t t')
+
 checkRowEQ :: (Eq t, Eq r) => RowTerm t r -> RowTerm t r -> [RowEqError]
 checkRowEQ l r =
   let (lLit, lVar) = intoRow l

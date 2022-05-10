@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveTraversable #-}
-
 module Core.Term where
 
 import Control.Arrow ((>>>))
@@ -8,15 +6,13 @@ import Core.Kind
 import Core.TypeLevel
 import Data.Bifunctor
 import Data.Either (partitionEithers)
+import Data.IndexedBag
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (fromMaybe)
 import Data.Position
 import Data.Result
 
 data RowKey
-
-newtype IndexedBag k v = IBag [(k, v)]
-  deriving (Show, Functor, Foldable, Traversable)
 
 type RowBag = IndexedBag RowKey
 

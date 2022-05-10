@@ -7,12 +7,11 @@ module Core.Multiplicity where
 import Control.Applicative (liftA2, (<|>))
 import Core.Kind
 import Data.Bifunctor (Bifunctor (..))
+import Data.EqBag
 import Data.Foldable (asum, for_)
 import Data.Functor (($>))
-import Data.HashMap.Strict (HashMap)
-import Data.HashSet (HashSet, intersection, singleton, toMap)
-import qualified Data.HashSet as HashSet
-import Data.Hashable (Hashable)
+import Data.IndexedBag
+import Data.Maybe (isNothing)
 import Data.Position
 
 class Boolean a where
@@ -60,14 +59,17 @@ data MultLit = MultLit
   }
   deriving (Show)
 
-type MultTerm = MultT MultLit
+newtype MultTerm a = MTerm {unMT :: MultT MultLit a}
+  deriving (Foldable, Functor)
 
 checkMultKind :: MultTerm (PosResult ProperKind) -> PosResult ProperKind
 checkMultKind m = for_ m (intoCheck Mult) $> Mult
 
-checkEQ ::
-  (Eq a, Hashable a) => MultTerm a -> MultTerm a -> Maybe (HashMap a MultLit)
-checkEQ l r =
+instance Eq a => Eq (MultTerm a) where
+  t == t' = isNothing (checkEQ t t')
+
+checkEQ :: Eq a => MultTerm a -> MultTerm a -> Maybe (IndexedBag a MultLit)
+checkEQ (MTerm l) (MTerm r) =
   let lw = first noWeakening l
       lc = first noContraction l
       rw = first noWeakening r
@@ -75,8 +77,7 @@ checkEQ l r =
    in (fmap (`MultLit` False) <$> checkBoolEQ lw rw)
         <|> (fmap (MultLit False) <$> checkBoolEQ lc rc)
 
-checkBoolEQ ::
-  (Eq a, Hashable a) => MultT Bool a -> MultT Bool a -> Maybe (HashMap a Bool)
+checkBoolEQ :: Eq a => MultT Bool a -> MultT Bool a -> Maybe (IndexedBag a Bool)
 checkBoolEQ l r =
   let lc = eval (second mkCNF l)
       ld = eval (second mkDNF l)
@@ -84,23 +85,23 @@ checkBoolEQ l r =
       rd = eval (second mkDNF r)
    in checkLE ld rc <|> checkLE rd lc
 
-checkLE :: (Eq a, Hashable a) => DNF a -> CNF a -> Maybe (HashMap a Bool)
+checkLE :: Eq a => DNF a -> CNF a -> Maybe (IndexedBag a Bool)
 checkLE (MkDNF dnf) (MkCNF cnf) = asum (liftA2 findSub dnf cnf)
   where
     findSub conj disj =
-      if HashSet.null (conj `intersection` disj)
+      if isEmpty (conj `intersection` disj)
         then Just (sub True conj <> sub False disj)
         else Nothing
     sub val set = val <$ toMap set
 
-type NormalForm a = [HashSet a]
+type NormalForm a = [EqBag a]
 
 newtype CNF a = MkCNF (NormalForm a)
 
-mkCNF :: (Eq a, Hashable a) => a -> CNF a
+mkCNF :: a -> CNF a
 mkCNF = MkCNF . pure . singleton
 
-instance (Eq a, Hashable a) => Boolean (CNF a) where
+instance Eq a => Boolean (CNF a) where
   join (MkCNF l) (MkCNF r) = MkCNF (liftA2 (<>) l r)
   meet (MkCNF l) (MkCNF r) = MkCNF (l <> r)
   true = MkCNF []
@@ -108,10 +109,10 @@ instance (Eq a, Hashable a) => Boolean (CNF a) where
 
 newtype DNF a = MkDNF (NormalForm a)
 
-mkDNF :: (Eq a, Hashable a) => a -> DNF a
+mkDNF :: a -> DNF a
 mkDNF = MkDNF . pure . singleton
 
-instance (Eq a, Hashable a) => Boolean (DNF a) where
+instance Eq a => Boolean (DNF a) where
   join (MkDNF l) (MkDNF r) = MkDNF (l <> r)
   meet (MkDNF l) (MkDNF r) = MkDNF (liftA2 (<>) l r)
   true = MkDNF [mempty]

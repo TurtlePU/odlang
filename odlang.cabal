@@ -33,6 +33,7 @@ library
       Core.TypeLevel
       Data.EqBag
       Data.HashMultiMap
+      Data.IndexedBag
       Data.Position
       Data.Result
       Lib

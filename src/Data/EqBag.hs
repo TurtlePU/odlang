@@ -1,20 +1,39 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Data.EqBag where
 
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
+import Prelude hiding (filter)
+import qualified Prelude
+import Data.IndexedBag (IndexedBag (IBag))
 
 newtype EqBag a = MkBag {unBag :: [NonEmpty a]}
 
 empty :: EqBag a
 empty = MkBag []
 
+isEmpty :: EqBag a -> Bool
+isEmpty = null . unBag
+
 singleton :: a -> EqBag a
 singleton = MkBag . pure . pure
 
 insert :: Eq a => a -> EqBag a -> EqBag a
 insert = unsafeCons . pure
+
+filter :: (a -> Bool) -> EqBag a -> EqBag a
+filter f = MkBag . Prelude.filter (f . NonEmpty.head) . unBag
+
+contains :: Eq a => EqBag a -> a -> Bool
+contains (MkBag b) x = any ((== x) . NonEmpty.head) b
+
+intersection :: Eq a => EqBag a -> EqBag a -> EqBag a
+intersection = filter . contains
+
+toMap :: EqBag a -> IndexedBag a ()
+toMap (MkBag b) = IBag (map ((,()) . NonEmpty.head) b)
 
 instance Eq a => Eq (EqBag a) where
   MkBag b == MkBag b' = b `lenEq` b' && all (flip any b' . compEq) b

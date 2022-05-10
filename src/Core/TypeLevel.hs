@@ -33,8 +33,8 @@ data TLTerm t
   = KLam (TLLambda t)
   | KMult (MultTerm t)
   | KRow (RowTerm' t)
-  | KType (TypeTerm t)
-  | KPretype (PreType t)
+  | KType (TypeTerm' t)
+  | KPretype (PreType' t)
   deriving (Functor)
 
 shiftTLTerm :: Positioned TLTerm -> Int -> Positioned TLTerm
@@ -79,4 +79,4 @@ upperBound :: Int -> MultLit
 upperBound = liftA2 MultLit (>= 1) (<= 1)
 
 upperBound' :: Position -> Int -> Positioned TLTerm
-upperBound' p = Posed p . KMult . MLit . upperBound
+upperBound' p = Posed p . KMult . MTerm . MLit . upperBound

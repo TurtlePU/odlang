@@ -2,6 +2,7 @@
 
 module Core.Kind where
 
+import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
 import Data.Position (Position, Positioned (..), getPosition)
 import Data.Result (CtxResult (..), Result (..))
@@ -45,6 +46,9 @@ intoCheck k g = do
   if k == k'
     then pure ()
     else failWith $ KMismatch k' $ EKind k
+
+intoAssert :: ProperKind -> PosResult ProperKind -> PosResult ProperKind
+intoAssert k g = intoCheck k g $> k
 
 failWith f = getPosition >>= CtxR . const . Err . pure . f
 

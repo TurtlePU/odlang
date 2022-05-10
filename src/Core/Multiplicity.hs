@@ -66,10 +66,10 @@ checkMultKind :: MultTerm (PosResult ProperKind) -> PosResult ProperKind
 checkMultKind m = for_ m (intoCheck Mult) $> Mult
 
 instance Eq a => Eq (MultTerm a) where
-  t == t' = isNothing (checkEQ t t')
+  t == t' = isNothing (checkMultEQ t t')
 
-checkEQ :: Eq a => MultTerm a -> MultTerm a -> Maybe (IndexedBag a MultLit)
-checkEQ (MTerm l) (MTerm r) =
+checkMultEQ :: Eq a => MultTerm a -> MultTerm a -> Maybe (IndexedBag a MultLit)
+checkMultEQ (MTerm l) (MTerm r) =
   let lw = first noWeakening l
       lc = first noContraction l
       rw = first noWeakening r

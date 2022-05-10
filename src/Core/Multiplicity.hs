@@ -5,6 +5,7 @@
 module Core.Multiplicity where
 
 import Control.Applicative (liftA2, (<|>))
+import Control.Monad.Free (Free, hoistFree, iter)
 import Core.Kind
 import Data.Bifunctor (Bifunctor (..))
 import Data.EqBag
@@ -35,23 +36,21 @@ instance Boolean Bool where
 
 data MultT l a
   = MLit l
-  | MVar a
-  | MJoin (MultT l a) (MultT l a)
-  | MMeet (MultT l a) (MultT l a)
+  | MJoin a a
+  | MMeet a a
   deriving (Show, Foldable, Functor)
 
-eval :: Boolean b => MultT Bool b -> b
-eval (MLit l) = fromBool l
-eval (MVar x) = x
-eval (MJoin t t') = eval t `join` eval t'
-eval (MMeet t t') = eval t `meet` eval t'
+interp :: Boolean b => MultT Bool b -> b
+interp = \case
+  MLit x -> fromBool x
+  MJoin l r -> l `join` r
+  MMeet l r -> l `meet` r
 
 instance Bifunctor MultT where
   bimap f g = \case
     MLit l -> MLit (f l)
-    MVar x -> MVar (g x)
-    MJoin t t' -> bimap f g t `MJoin` bimap f g t'
-    MMeet t t' -> bimap f g t `MMeet` bimap f g t'
+    MJoin t t' -> g t `MJoin` g t'
+    MMeet t t' -> g t `MMeet` g t'
 
 data MultLit = MultLit
   { noWeakening :: Bool,
@@ -59,31 +58,35 @@ data MultLit = MultLit
   }
   deriving (Show)
 
-newtype MultTerm a = MTerm {unMT :: MultT MultLit a}
-  deriving (Foldable, Functor)
+type MultTerm = Free (MultT MultLit)
 
 checkMultKind :: MultTerm (PosResult ProperKind) -> PosResult ProperKind
 checkMultKind m = for_ m (intoCheck Mult) $> Mult
 
-instance Eq a => Eq (MultTerm a) where
-  t == t' = isNothing (checkMultEQ t t')
-
 checkMultEQ :: Eq a => MultTerm a -> MultTerm a -> Maybe (IndexedBag a MultLit)
-checkMultEQ (MTerm l) (MTerm r) =
-  let lw = first noWeakening l
-      lc = first noContraction l
-      rw = first noWeakening r
-      rc = first noContraction r
+checkMultEQ l r =
+  let lw = mapLit noWeakening l
+      lc = mapLit noContraction l
+      rw = mapLit noWeakening r
+      rc = mapLit noContraction r
    in (fmap (`MultLit` False) <$> checkBoolEQ lw rw)
         <|> (fmap (MultLit False) <$> checkBoolEQ lc rc)
+  where
+    mapLit f = hoistFree (first f)
 
-checkBoolEQ :: Eq a => MultT Bool a -> MultT Bool a -> Maybe (IndexedBag a Bool)
+checkBoolEQ ::
+  Eq a =>
+  Free (MultT Bool) a ->
+  Free (MultT Bool) a ->
+  Maybe (IndexedBag a Bool)
 checkBoolEQ l r =
-  let lc = eval (second mkCNF l)
-      ld = eval (second mkDNF l)
-      rc = eval (second mkCNF r)
-      rd = eval (second mkDNF r)
+  let lc = eval mkCNF l
+      ld = eval mkDNF l
+      rc = eval mkCNF r
+      rd = eval mkDNF r
    in checkLE ld rc <|> checkLE rd lc
+  where
+    eval f = iter interp . fmap f
 
 checkLE :: Eq a => DNF a -> CNF a -> Maybe (IndexedBag a Bool)
 checkLE (MkDNF dnf) (MkCNF cnf) = asum (liftA2 findSub dnf cnf)

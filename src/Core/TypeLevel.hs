@@ -5,6 +5,7 @@ module Core.TypeLevel where
 
 import Control.Applicative (Applicative (liftA2))
 import Control.Monad (forM_, (>=>))
+import Control.Monad.Free (Free (Free))
 import Core.Kind
 import Core.Multiplicity
 import Core.Pretype
@@ -79,4 +80,4 @@ upperBound :: Int -> MultLit
 upperBound = liftA2 MultLit (>= 1) (<= 1)
 
 upperBound' :: Position -> Int -> Positioned TLTerm
-upperBound' p = Posed p . KMult . MTerm . MLit . upperBound
+upperBound' p = Posed p . KMult . Free . MLit . upperBound

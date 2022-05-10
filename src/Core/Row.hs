@@ -1,7 +1,9 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Core.Row where
 
+import Control.Monad.Free
 import Core.Kind
 import Data.Bifunctor (Bifunctor (..))
 import Data.EqBag (EqBag)
@@ -16,51 +18,42 @@ import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position, Positioned, getPosition)
 import Data.Result (mapCtx)
 
-data RowT k e r
-  = REmpty k
-  | REntry e
-  | RVar r
-  | RJoin (RowT k e r) (RowT k e r)
-  deriving (Show)
-
-trifold :: Semigroup s => (k -> s) -> (e -> s) -> (r -> s) -> RowT k e r -> s
-trifold f g h = fix $ \rec -> \case
-  REmpty k -> f k
-  REntry e -> g e
-  RVar x -> h x
-  RJoin l r -> rec l <> rec r
-
 type EntryKey = String
 
-newtype RowTerm t r = MkRowTerm {unTerm :: RowT ProperKind (EntryKey, t) r}
+data RowT e r
+  = REmpty ProperKind
+  | REntry EntryKey e
+  | RJoin r r
+  deriving (Functor)
 
-mapRow :: (a -> b) -> RowTerm a a -> RowTerm b b
-mapRow f = bimap f f
+instance Bifunctor RowT where
+  bimap f g = \case
+    REmpty k -> REmpty k
+    REntry e x -> REntry e (f x)
+    RJoin l r -> RJoin (g l) (g r)
 
-instance Bifunctor RowTerm where
-  bimap f g = MkRowTerm . rec . unTerm
-    where
-      rec = \case
-        REmpty k -> REmpty k
-        REntry (k, t) -> REntry (k, f t)
-        RVar x -> RVar (g x)
-        RJoin l r -> rec l `RJoin` rec r
+type RowTerm t = Free (RowT t)
+
+bimapRow :: (a -> b) -> (c -> d) -> RowTerm a c -> RowTerm b d
+bimapRow f g = hoistFree (first f) . fmap g
 
 newtype RowTerm' t = MkRowTerm' {unTerm' :: RowTerm t t}
 
 instance Functor RowTerm' where
-  fmap f = MkRowTerm' . bimap f f . unTerm'
+  fmap f = MkRowTerm' . bimapRow f f . unTerm'
 
 synthesizeRowKind :: RowTerm' (PosResult ProperKind) -> PosResult ProperKind
-synthesizeRowKind (MkRowTerm' (MkRowTerm r)) = do
-  ks <- sequenceA $ trifold (pure . pure . Row) (pure . fmap Row . snd) pure r
+synthesizeRowKind (MkRowTerm' r) = do
+  ks <- sequenceA (iterA fold r)
   case NonEmpty.nub ks of
     Row k :| [] -> pure (Row k)
     k :| [] -> failWith (KMismatch k ERow)
     ks -> failWith (KDifferentRows ks)
-
-instance (Eq t, Eq r) => Eq (RowTerm t r) where
-  t == t' = null (checkRowEQ t t')
+  where
+    fold = \case
+      REmpty k -> pure $ pure $ Row k
+      REntry _ v -> pure $ Row <$> v
+      RJoin l r -> l <> r
 
 checkRowEQ :: (Eq t, Eq r) => RowTerm t r -> RowTerm t r -> [RowEqError]
 checkRowEQ l r =
@@ -71,8 +64,11 @@ checkRowEQ l r =
         ++ HashMap.foldMapWithKey mkUnder litNeqs
         ++ [EVars | lVar /= rVar]
   where
-    intoRow =
-      extract . trifold (const mempty) (uncurry fromEntry) fromVar . unTerm
+    intoRow = extract . iter fold . fmap fromVar
+    fold = \case
+      REmpty _ -> mempty
+      REntry k v -> fromEntry k v
+      RJoin l r -> l <> r
     extract (MkRow (Multi lit) var) = (lit, var)
     mkUnder l = \case
       True -> [EUnder l]

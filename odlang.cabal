@@ -31,6 +31,7 @@ library
       Core.Row
       Core.Term
       Core.TypeLevel
+      Data.Bifree
       Data.EqBag
       Data.HashMultiMap
       Data.IndexedBag
@@ -45,6 +46,7 @@ library
       src
   build-depends:
       base >=4.7 && <5
+    , free
     , hashable
     , megaparsec
     , text
@@ -60,6 +62,7 @@ executable odlang-exe
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , free
     , hashable
     , megaparsec
     , odlang
@@ -77,6 +80,7 @@ test-suite odlang-test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , free
     , hashable
     , megaparsec
     , odlang

@@ -25,6 +25,7 @@ dependencies:
 - megaparsec
 - unordered-containers
 - hashable
+- free
 
 library:
   source-dirs: src

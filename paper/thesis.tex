@@ -1,0 +1,1126 @@
+\documentclass[a4paper,14pt]{extreport}
+
+\usepackage[a4paper, left=2.5cm, right=2cm, top=2cm, bottom=2cm]{geometry}
+
+\usepackage{cmap}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{mathpartir}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{ragged2e}
+\usepackage{titlesec}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[english]{babel}
+
+\justifying
+\linespread{1.3}
+
+\titleformat{\chapter}[display]
+{\normalfont\Large\bfseries}
+{\MakeUppercase{\chaptertitlename}\ \thechapter}{20pt}{\MakeUppercase}
+
+\begin{document}
+
+\begin{titlepage}
+\begin{center}
+    Federal State Autonomous Educational Institution for Higher Education \\
+    National Research University Higher School of Economics
+
+    \vspace{1cm}
+    Faculty of Computer Science \\
+    Educational Program \\
+    Applied Mathematics and Information Science
+
+    \vspace{3cm}
+    BACHELOR'S THESIS \\
+    Program project \\
+    \textbf{A New Functional Language with Effect Types
+    and Substructural Handlers}
+\end{center}
+\vspace{1cm}
+Prepared by the student of group 183, 4th year of study, \\
+\textbf{Sokolov Pavel Pavlovich}
+
+\vspace{0.5cm}
+\noindent Supervisor: \hfill \\
+Assoc. Prof., C. Sc., \textbf{Kuznetsov Stepan Lvovich}
+
+\vfill
+\center{Moscow 2022}
+\end{titlepage}
+
+\tableofcontents
+
+\newpage
+
+\begin{center}\textbf{Abstract}\end{center}
+
+We propose a new programming language, OdLang, where algebraic effects are
+visible to the type system as polymorphic effect types. A substructural type
+system guarantees a predictable behavior of effectful computations; we model
+these using row polymorphism and recursive types. The result of the
+transformation lets us represent effectful programs in the continuation-passing
+style, which should be familiar to those who are acquainted with Freer monads.
+As a proof of concept, we implement an interpreter in Haskell, which we consider
+to be one of the main inspirations for this project.
+
+Мы предлагаем новый язык программирования, OdLang, в котором алгебраические
+эффекты отслеживаются системой типов в форме поли\-морфных типов эффектов.
+Субструктурная система типов гарантирует предсказуемое поведение вычислений с
+эффектами; мы моделируем их, используя строковый полиморфизм и рекурсивные типы
+данных. В ре\-зультате преобразования мы можем представить программы с эффектами
+в стиле передачи продолжений, который должен быть знаком работавшим с монадой
+\verb|Freer|. В качестве доказательства концепции мы реализуем интерпретатор
+нашего языка на языке Haskell, который мы считаем одним из основных
+вдохновений для проекта.
+
+\textbf{Keywords}: algebraic effects, substructural type system, bidirectional
+type checking, row polymorphism, equirecursive types.
+
+\chapter{Introduction}
+
+This project belongs to the area of programming language design. We aim to
+develop a new functional language featuring a modern type system for ergonomic
+management of side effects and program resources.
+
+Simply put, side effects are everything a program does to the environment:
+device management, reads from / writes to files, missile launches, etc.
+Programming errors in this area range from embarrassing bugs to outright
+catastrophes; every substantial development team wants to be sure that these
+errors never happen. However, existing mainstream programming techniques such as
+testing and code review are unsound, which means that you can never be sure that
+there are no bugs even if all tests have passed.
+
+Luckily, there is a sound method known to every seasoned programmer: type system
+expressive enough to statically represent invariants you wish to uphold. In this
+project, we implement a new language with effect types representing computations
+that influence its environment. The idea is not novel: there are research
+languages Unison \cite{unison} and Koka \cite{koka} on this topic; a simpler and
+somewhat more tractable model is studied in \cite{bauer}. Our innovation is in
+the usage of a substructural type system to statically verify that continuations
+in effect handlers are called an appropriate number of times. A concept for such
+combination is folklore and mentioned in \cite{folklore}; this project properly
+expands on the topic.
+
+We begin with a general analysis of effect systems including the ones mentioned
+above as well as their analogues in Haskell. Then we overview the features in
+our language that aid algebraic effects and show the necessity to split the
+language in two layers --- core language and surface language. In the following
+pages, we provide a complete description of the type system, differences between
+surface and core languages and, finally, all related algorithmic procedures.
+
+The results are twofold. Firstly, we present a profound design of a sound
+substructural type system for a functional language with algebraic effects.
+Secondly, we provide a proof-of-concept interpreter of a core language in
+Haskell. Interpreter of a surface language, formal verification of soundness and
+implementation of efficient self-hosting compiler are reserved for future work.
+
+\chapter{Literature Review}
+
+The point of pure functional programming is to give a programmer precise control
+over side effects that happen during program execution. The consensus is to use
+special kinds of monads, notable examples being monad transformers \cite{mtl},
+free monads \cite{free} and, most recently, freer monads. The last ones in
+conjunction with heterogeneous lists give rise to the Extensible Effects
+approach \cite{exteff} which, as claimed by the authors, overcomes the drawbacks
+of previous tools. However, these techniques are rarely used outside of Haskell
+because they require quite advanced type-level machinery which is simply not
+available in other, either more simple or mainstream, languages.
+
+Albeit surprisingly, the key concept behind Extensible Effects is simple. It is
+to view an effect as an interaction between a sub-expression and a central
+authority that handles effect execution. Languages with algebraic effects, for
+their part, capitalize on this idea and provide built-in language primitives to
+build both such sub-expressions --- from now on, we will call them
+``procedures'' --- and central authorities, ``handlers''. Communication between
+them is done via continuation-passing \cite{algeff}.
+
+For example, Multicore OCaml has a way to declare new effects as well as a
+builtin function \verb|perform| to, indeed, \textit{perform} an effect
+\cite{ocaml}. Handler is just a regular \verb|case| statement that
+pattern-matches on performed effects. However, for a long time effects were
+invisible to OCaml's type system; this means that every function could be a
+procedure executing arbitrary effects, which is in no way different from
+the mainstream approach.
+
+As for Unison, they introduce proper effect types in the form of attributes on
+the function type. However, they do not restrict how many times a continuation
+is called in a handler \cite{unrestricted}, which may lead to bizarre and
+unexpected behavior of a program, just like a program in C which uses
+\verb|fork|. Koka's treatment of continuations is only slightly better as they
+do not let a programmer access continuation directly, which enables them (and
+makes them) to introduce a whole lot of ad-hoc mechanisms to make both behavior
+and performance of programs more predictable \cite{hidden}.
+
+A more disciplined solution is offered in \cite{bauer}. The authors of Runners
+in Action simplify the framework by forcing continuations to be in tail-call
+positions, effectively replacing continuation with a simple \verb|return|
+statement (pun intended). However, it makes certain effects inexpressible, most
+notably nondeterminism and asynchrony.
+
+We get rid of the tradeoffs mentioned above by embracing a substructural type
+system. In its setting, every value can have two constraints imposed on its
+usage: can it be silently dropped? Can it be copied? We simply make a programmer
+specify the constraints for continuations while declaring new effects. As a
+bonus, these constraints can be later used by an optimizing compiler to place
+values outside of the garbage-collected heap.
+
+Actually, there already are a few different substructural type systems.
+Linear Types extension in Haskell \cite{linear} and unique types in Rust
+\cite{rust} are the most well-known examples, although we take a slightly
+different approach which is extensively described in \cite{ural}. As of our
+current knowledge, this project is the first to utilize URAL for language with
+algebraic effects.
+
+Now, let's take a step back and pay attention to the ergonomics of the language.
+Effect types themselves make type signatures more complicated than those in
+mainstream languages; to make matters worse, linear types are notorious for
+their brimming function signatures. This calls for type inference. To separate
+concerns about type inference and syntactic sugar from the rest of the language,
+we followed in the footsteps of Glasgow Haskell Compiler and split the language
+in two parts \cite{ghc}: surface language for developers to write programs in
+and core language for type checking and evaluation algorithms to run in.
+
+In order to encode inductive data types of a surface language, we, perhaps
+mistakingly, decided to use equirecursive types as they are defined in
+\cite{stone}. However, we discovered that this opens a possibility to eliminate
+algebraic effects from the core language altogether: coupled with row
+polymorphism like in \cite{rowkoka} and \cite{rowcaml}, equirecursive types
+allow us to desugar types of computations into open unions where each variant
+represents one effectful operation; this encoding is very similar to Freer
+monads \cite{exteff}. After employing this encoding, effect handlers become
+nothing more than recursive functions which accept computations and
+pattern-match on them. Nice!
+
+One should note, though, that this encoding is not the only reason why we
+incorporated row types. It simplifies core language: without it, one would
+typically need to introduce a binary operation on types and unit of it for every
+kind of composite data structure (multiplicative conjunction, additive
+conjunction, additive disjunction), which, together with the introduction and
+elimination rules, would comprise a whole lot of logical rules. With our
+generalized flavor of row types, we needed only three rules for each kind; the
+idea of generalization itself stems from the similarities between records for
+both multiplicative and additive conjunctions.
+
+\section*{Conclusion}
+
+Our main goal for this project is to design a substructural type system capable
+of effect polymorphism from scratch. However, thanks to previous research, we
+have basic building blocks; our task is to properly fit them together.
+
+\chapter{OdLang Core}
+
+This chapter is solely devoted to elaborating on how to fit together a
+substructural type system, row polymorphism and equirecursive types. This
+includes a complete description of logical rules for the core language along
+with the nuts and bolts of their actual implementation.
+
+\section{Kinds}
+
+OdLang Core is a dialect of System $F_\omega$. It has six kinds:
+
+\[
+    \begin{array}{rl}
+        L ::=& \text{data} \;|\; L \times L \\
+        K ::=& L \;|\; \text{type} \;|\; \text{mult} \;|\; \text{row} \; K
+            \;|\; K \times K \;|\; K \to K \\
+    \end{array}
+\]
+
+Kinds in $L$ are called ``simple kinds'', whereas kinds in $K$ are ``proper
+kinds'' or just ``kinds''.
+
+Terms of kind \textbf{mult} (we call them ``modalities'' or ``multiplicities'')
+represent substructural restrictions we talked about. Types are data
+annotated with modality. Data actually represents varieties of terms --- be
+it algebraic data types or function types.
+
+Terms of kind \textbf{row} $k$ are labeled collections of entries of kind $k$.
+Note that, usually, rows are collections of types; we extend the definition for
+a reason which will become clear once we discuss effect types in the next
+chapter.
+
+$\times$ is a kind constructor for type-level pairs which are extremely useful
+for both mutually recursive types and desugaring of effect types. $(\to)$ are
+your usual type operators.
+
+\section{Type-level operations}
+
+To encode relations between kinds, OdLang Core has a dedicated dialect of STLC
+with pairs and a fixpoint. Its kinding rules are fairly standard and are given
+in \ref{typelevel}; $K$ is a standard context supporting exchange, weakening and
+contraction. However, in addition to these generic rules, each kind has its own
+additional set of rules. To denote this, we reuse these terms later and refer to
+them as ``$E$-terms''.
+
+\begin{figure}[h!]
+    \centering
+    \begin{mathpar}
+        \inferrule
+            {k \; \text{kind}}
+            {K,\; a :: k \;\vdash\; a :: k}
+            \textsc{KVar} \and
+        \inferrule
+            {k, k' \; \text{kind} \\ K,\; a :: k \;\vdash\; b :: k'}
+            {K \;\vdash\; (a :: k .\; b) :: k \to k'}
+            \textsc{KAbs} \and
+        \inferrule
+            {k, k' \; \text{kind} \\ K \;\vdash\; x :: k
+                \\ K \;\vdash\; t \;::\; k \to k'}
+            {K \;\vdash\; t \; x :: k'}
+            \textsc{KApp} \and
+        \inferrule
+            {K \;\vdash\; a :: k \\ K \;\vdash\; b :: k'}
+            {K \;\vdash\; \langle a, b \rangle :: k \times k'}
+            \textsc{KPair} \and
+        \inferrule
+            {K \;\vdash\; p \;::\; k_1 \times k_2}
+            {K \;\vdash\; \pi_i \; p :: k_i}
+            \textsc{$\text{KProj}_i$} \and
+        \inferrule
+            {k \; \text{simple kind} \\ K,\; a :: k \;\vdash\; b :: k}
+            {K \;\vdash\; (\mu\; a :: k.\; b) :: k}
+            \textsc{KFix} \and
+        \inferrule
+            {K \;\vdash\; t :: \text{type}}
+            {K \;\vdash\; \text{mul} \; t :: \text{mult}}
+            \textsc{KMul} \and
+        \inferrule
+            {k, k' \; \text{kind} \\ K \;\vdash\; r :: \text{row} \; k
+                \\ K \;\vdash\; t \;::\; k \to k'}
+            {K \;\vdash\; t \;@\; r \;::\; \text{row} \; k'}
+            \textsc{KMap} \and
+    \end{mathpar}
+    \caption{Type-level operations}
+    \label{typelevel}
+\end{figure}
+
+The most interesting bit is a new rule, KMap, which allows us to apply an
+operator of kind $k \to k'$ not only to terms of kind $k$, but also to rows of
+kind \textbf{row} $k$ (elementwise). This makes row a type-level endofunctor.
+
+Once we introduce type-level operations, we also have to determine evaluation
+rules and sound equivalence relations which respect evaluation. The latter is
+the whole point of \cite{stone}; we only have to extend algorithms to handle
+polymorphic multiplicities and rows which are elaborated in the corresponding
+sections.
+
+\section{Multiplicities}
+
+Multiplicities form a distributive lattice on four elements:
+\[
+    \begin{array}{rl}
+        M ::=& E \;|\; ! \;|\; ? \;|\; + \;|\; * \;|\; M \lor M
+            \;|\; M \land M
+    \end{array}
+\]
+
+Multiplicity literals draw an analogy with the notation of regular expressions:
+
+\begin{itemize}
+    \item \textbf{U}nrestricted ($*$) --- values of such types can be left
+        unused and can be arbitrarily copied;
+    \item \textbf{R}elevant ($+$) --- cannot be left unused;
+    \item \textbf{A}ffine ($?$) --- cannot be copied, but can be left unused;
+    \item \textbf{L}inear ($!$) --- must be used exactly once.
+\end{itemize}
+
+$\lor$ is used to join constraints in composite structures; $\land$ is used to
+desugar constraints on multiplicity variables. For example, a type of function
+duplicating its argument is desugared from the surface language like this:
+
+\begin{multline}
+    [m \le +] \to a^m \to (a^m, a^m) \quad\rightsquigarrow\\
+    \big(\text{Forall} (a :: \text{data}) (m :: \text{mult}) .\\
+    (a^{m \land +} \to \{.0: a^{m \land +}, .1: a^{m \land +}\})^*\big)^*
+\end{multline}
+
+\subsection{Multiplicity equality problem}
+
+In three following subproblems, we assume that $E$-terms are opaque, that is,
+they are treated as completely independent variables which can be assigned
+independent values. However, this is not always true:
+$\pi_1 \langle *, t \rangle$ obviously reduces to $*$ which cannot be assigned
+to any value other than $*$. To fix this, we first eagerly evaluate $E$-terms
+with every reduction rule except for $\mu$-expanding. For now, we assume that
+this evaluation strategy yields opaque $E$-terms (given they are of kind
+\textbf{mult}).
+
+\begin{enumerate}
+    \item MULTIPLICITY EQUALITY.
+
+        \textbf{Input}: two multiplicity terms consisting of multiplicity
+        literals, $\lor$, $\land$ and opaque $E$-terms. Assume that there is a
+        binary predicate $a =_E b$ on $E$-terms which decides their equality.
+
+        \textbf{Expected output}: let us call a function from $E$-terms to
+        multiplicity literals a \textit{valuation} if it respects $\_ =_E \_$.
+        If given multiplicity terms evaluate to the same multiplicity literal
+        under any possible valuation, say ``YES''. If there exists a valuation
+        under which the evaluation differs, output it or any subset (partial
+        map) sufficient to show that evaluation differs.
+
+        \textbf{Solution}: note that we can represent modalities as pairs of
+        booleans $(w, c)$, where $w$ stands for ``is weakening (drop)
+        forbidden'' and $c$ means the same for contraction (copying). Also note
+        that join and meet respect this representation, that is:
+
+        \[ (w, c) \land (w', c') = (w \land w', c \land c'); \]
+        \[ (w, c) \lor (w', c') = (w \lor w', c \lor c'). \]
+
+        Therefore, we can check equality of multiplicity terms in the same way
+        we could check equality of two boolean formulas formed out of $\land$,
+        $\lor$ and out of $E$-terms as variables. This way, an output to the
+        problem is formed as follows: check the equality of boolean formulas for
+        the $w$ part; if there exists a valuation from $E$-terms to booleans
+        which disproves equality of booleans, we can safely output it as a
+        partial valuation which disproves equality of modalities ($c$ components
+        do not matter). Otherwise check the equality for the $c$ part.
+
+    \item EQUALITY OF MONOTONIC BOOLEAN FORMULAE.
+
+        \textbf{Input}: two boolean formulas $\phi, \psi$ consisting of boolean
+        literals, $\lor$, $\land$ and opaque $E$-terms. $\_ =_E \_$ is still
+        available.
+
+        \textbf{Expected output}: a partial valuation to booleans which
+        disproves the supposed equality of formulas, if any.
+
+        \textbf{Solution}: In other words, we want to check if the following is
+        true:
+        \[ \forall a: (\phi(a) \equiv \psi(a)) \]
+        However, this first-order formula is equivalent to:
+        \[
+            (\forall a: \phi(a) \to \psi(a)) \land
+            (\forall a: \psi(a) \to \phi(a))
+        \]
+        We see that, to find an offending valuation, it is enough to find a
+        valuation which offends any one of the subsumptions.
+
+    \item SUBSUMPTION OF MONOTONIC BOOLEAN FORMULAE.
+
+        \textbf{Input}: two monotonic boolean formulas $\phi, \psi$ where
+        variables can be tested for equality.
+
+        \textbf{Expected output}: a partial valuation $a$ which offends
+        $\phi(a) \to \psi (a)$, if any.
+
+        \textbf{Solution}: we hope that there exists a solution which is
+        polynomial in the size of formulas, however it seems impossible unless
+        $\text{P}=\text{NP}$. The solution we provide is worst-time exponential;
+        it is however not of great concern because we do not expect multiplicity
+        terms to be big.
+
+        First of all, note that for every boolean formula we receive, we can
+        build an equivalent CNF and DNF using a depth-first tree traversal. In
+        addition, the following tautologies are true:
+        \[
+            \forall a: \beta(a) \to (\gamma(a) \land \delta(a))
+            \equiv (\forall a: \beta(a) \to \gamma(a))
+            \land (\forall a: \beta(a) \to \delta(a));
+        \]
+        \[
+            \forall a: (\beta(a) \lor \gamma(a)) \to \delta(a)
+            \equiv (\forall a: \beta(a) \to \delta(a))
+            \land (\forall a: \gamma(a) \to \delta(a)).
+        \]
+
+        Then, if we want to check if $\phi \to \psi$, it is enough to:
+        \begin{enumerate}
+            \item Build a DNF of $\phi$;
+            \item Build a CNF of $\psi$;
+            \item For every conjunct $K = k_1 \land \ldots \land k_m$ of $\phi$
+                and for every disjunct $L = l_1 \lor \ldots \lor l_n$ of $\psi$,
+                try to find an offending valuation for $K \to L$.
+        \end{enumerate}
+
+        But how do we find it? Consider the following: $K \to L$ is wrong iff
+        every variable in $K$ is set to true, but every variable in $L$ is set
+        to false. Therefore such a valuation exists iff variable sets of $K$ and
+        $L$ are disjoint. This can be tested trivially in $O(|K| \cdot |L|)$
+        time.
+
+        This is worst-time exponential because both DNF and CNF can be
+        exponentially big in comparison with the source formula.
+\end{enumerate}
+
+\section{Row types}
+
+Rows form a join semilattice of dictionaries:
+\[
+    \begin{array}{rl}
+        R_k ::=& E \;|\; \varnothing_k \;|\; (.n : t) \;|\; R_k \lor R_k
+    \end{array}
+\]
+
+The underscore $k$ means that $R_k$ describes terms of kind ``row $k$''
+(therefore term $t$ above is expected to have kind $k$). $n$ is an entry label.
+
+One should note that, because of the substructural type system, we cannot
+silently drop repeating entries as is done in JavaScript. Therefore rows can
+have duplicated labels; however, we provide no disambiguation between duplicated
+entries because this would not respect the absence of order between them.
+
+This way, the semantic of a row is best represented as a multimap, and row
+equivalence is an equivalence of multimap formulas.
+
+\subsection{Row equality problem}
+
+Once again, we first make $E$-terms opaque by eagerly evaluating them safe for
+$\mu$ unfolding. Here, opaqueness means two things. First of all, opaque
+$E$-terms of row kind cannot reduce into $(.n : t) \lor \ldots$. Secondly,
+for every pair of different opaque $E$-terms there exists a substitution of
+variables that makes them reduce into different rows.
+
+\begin{enumerate}
+    \item ROW EQUALITY.
+
+        \textbf{Input}: two formulas consisting of empty sets, entry literals,
+        $\lor$ and opaque $E$-terms. Assume that there is a binary predicate
+        $a =_E b$ on $E$-terms which decides their equality and a binary
+        predicate $c =_k d$ on entry values which decides their equality.
+
+        \textbf{Expected output}: if given formulas evaluate to the same
+        multimap under any possible valuation, say ``YES''. If there exists a
+        valuation under which the evaluation differs, say ``NO''.
+
+        \textbf{Solution}: row formulas admit a more compact representation
+        which is a pair: the first component collects entries in a multimap, the
+        second collects $E$-terms in a list. Once again, we can build this
+        representation out of a formula using a depth-first tree traversal.
+
+        The equality of a pair is an equality of its components; multimaps
+        \verb|a|, \verb|b| are equal iff sets of labels are equal and, for every
+        label \verb|l|, lists \verb|a[l]| and \verb|b[l]| are equal. Therefore
+        we reduce a ROW EQUALITY to the BAG EQUALITY of multimap entries and of
+        lists of $E$-terms.
+
+    \item BAG EQUALITY.
+
+        \textbf{Input}: two lists $l, r$ of opaque values which can be tested
+        for equality.
+
+        \textbf{Expected output}: ``YES'' if the contents of lists are equal,
+        ``NO'' otherwise.
+
+        \textbf{Solution}: equality is an equivalence relation, therefore we can
+        say that we are given a graph which is reflexively, symmetrically and
+        transitively closed; we are tasked with finding the perfect matching in
+        its bipartite subgraph.
+
+        First of all, such a graph consists of disjoint cliques. Then a perfect
+        matching exists iff a separation into bipartite graph perfectly cuts
+        each clique in two parts of equal size.
+
+        In conclusion, it is enough to:
+        \begin{enumerate}
+            \item Collect contents of $l$ in a list of cliques in $O(|l|^2)$;
+            \item Do the same for $r$;
+            \item Check that the amount of cliques are equal;
+            \item Check that for every clique in $l$, there exists its sibling
+                in $r$ of the same size.
+        \end{enumerate}
+\end{enumerate}
+
+Sadly, the error reporting facilities of row equality are much worse that those
+of multiplicity equality: if two rows are not equal, we can only say which two
+bags are not equal; if bags are not equal, it means that there is no perfect
+matching, and there is no useful description of this fact which can be shown to
+the programmer.
+
+\section{Data}
+
+Data includes simple functions as well as \verb|forall| binders for different
+kinds of polymorphism. In addition, any row of types $R$ can be turned into an
+algebraic data type.
+
+\[
+    \begin{array}{rl}
+        T ::=& E \;|\; P^M \\
+        P ::=& E \;|\; T \to T \;|\; \Pi (x :: K). T \\
+        \;|\;& \{...R\} \;|\; [...R] \;|\; (|...R|)
+    \end{array}
+\]
+
+To elaborate on the algebraic data type semantics:
+
+\begin{itemize}
+    \item $\{\dots R\}$ is a record of values in $R$. To construct a value of
+        record type is to provide all its fields, to use the record is to use
+        all its fields.
+    \item $[\dots R]$ is a list of alternatives listed in $R$. To construct it
+        is to provide all its fields built from the same context, to use it is
+        to choose one of alternatives.
+    \item $(|\dots R|)$ is a tagged union of options listed in $R$. To construct
+        it is to construct one of the options, to use it is to pattern-match on
+        it and describe how to use every option.
+\end{itemize}
+
+Data equality checking algorithm is straightforwardly imported from
+\cite{stone}.
+
+\newpage
+
+\section{Type-level evaluation}
+
+In the previous sections, we talked about eager evaluation of terms. Now that we
+have seen all the syntactic forms in the type level of our language, we can
+define what it means. We define it via small-step operational semantics. Its
+logical rules are mostly standard so in Fig.\ref{eval} we provide only the ones
+involving KMul and KMap rules.
+
+Note that we had to add functor laws for rows: it is necessary in order to
+preserve soundness of the algorithmic equality. Also note that making equality
+and evaluation mutually recursive is not a problem because they still terminate.
+
+\begin{figure}[h!]
+    \centering
+    \begin{mathpar}
+        \inferrule
+            {f = (a :: k. a)}
+            {f \;@\; r \rightsquigarrow r}
+            \textsc{OpMapID} \and
+        \inferrule
+            {K \;\vdash\; g :: k \to k'}
+            {f \;@\; (g \;@\; r) \rightsquigarrow (a :: k. f (g \; a)) \;@\; r}
+            \textsc{OpMapComp} \and
+        \inferrule
+            {K \;\vdash\; t :: k \to k'}
+            {t \;@\; \varnothing_k \rightsquigarrow \varnothing_{k'}}
+            \textsc{OpMapEmpty} \and
+        \inferrule
+            {  }
+            {f \;@\; (.n : x) \rightsquigarrow (.n : f x)}
+            \textsc{OpMapEntry} \and
+        \inferrule
+            {  }
+            {f \;@\; (r \lor r') \rightsquigarrow (f \;@\; r) \lor (f \;@\; r')}
+            \textsc{OpMapJoin} \and
+        \inferrule
+            {  }
+            {\text{mul}\;a^m \rightsquigarrow m}
+            \textsc{OpRunMul}
+    \end{mathpar}
+    \caption{Small-step operational semantics of type-level term evaluation}
+    \label{eval}
+\end{figure}
+
+\section{Terms}
+
+Declarative rules for terms follow straightforwardly from rules for data and are
+provided in Fig.\ref{terms-1}-\ref{terms-2}. Declarative rules for substructural
+term context are conventional and are provided in Fig.\ref{terms-1}. Note that
+while defining operations on rows, we have to account for polymorphic rows.
+
+TODO: keys, row access, row as context
+
+\subsection{Context splitting}
+
+TODO: about actual representation in the interpreter.
+
+\begin{figure}
+    \centering
+    \begin{mathpar}
+        \inferrule
+            {K;\; \Gamma,\;x:t,\;y:u,\;\Delta \;\vdash\; e:T}
+            {K;\; \Gamma,\;y:u,\;x:t,\;\Delta \;\vdash\; e:T}
+            \textsc{ $\Gamma$-Exchange} \and
+        \inferrule
+            {m \le\; ? \\ K;\; \Gamma \;\vdash\; e:T}
+            {K;\; x:p^m,\; \Gamma \;\vdash\; e:T}
+            \textsc{ $\Gamma$-Weakening} \and
+        \inferrule
+            {m \le + \\ K;\; x:t^m,\; x:t^m,\; \Gamma \;\vdash\; e:T}
+            {K;\; x:t^m,\; \Gamma \;\vdash\; e:T}
+            \textsc{ $\Gamma$-Contraction} \and
+        \inferrule{K \;\vdash\; t \; \text{type}}{K;\; x:t \;\vdash\; x:t}
+            \textsc{TVar} \and
+        \inferrule
+            {K;\; \Gamma,\; x:t \;\vdash\; e:u
+                \\ K \;\vdash\; \text{sup} \; \Gamma \le m}
+            {K; \Gamma \;\vdash\; (\lambda x.\; e) : (t \to u)^m}
+            \textsc{TAbs} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; f : (t \to u)^m \\ K;\Delta \;\vdash\; x : t}
+            {K;\; \Gamma, \Delta \;\vdash\; f \; x : u}
+            \textsc{TApp} \and
+        \inferrule
+            {a :: k,\; K;\; \Gamma \;\vdash\; e:t
+                \\ K \;\vdash\; \text{sup} \; \Gamma \le m}
+            {K;\Gamma \;\vdash\; (\Lambda a :: k.\; e)
+                : \left(\Pi(a :: k). t\right)^m}
+            \textsc{TGen} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; f : \left(\Pi(a :: k). t\right)^m
+                \\ K \;\vdash\; d :: k}
+            {K;\Gamma \;\vdash\; f \; d : t [a := d]}
+            \textsc{TInst}
+    \end{mathpar}
+    \caption{System-F Fragment and Substructural Context}
+    \label{terms-1}
+\end{figure}
+\begin{figure}
+    \centering
+    \begin{mathpar}
+        \inferrule
+            {\forall n \in\text{keys}\;R:
+                \quad K;\Gamma_n \;\vdash\; e_n : R\{n\}
+                \\\\ K \;\vdash\; \text{sup} \; R \le m}
+            {K;\overline{\Gamma_n} \;\vdash\;
+                \{\overline{.n : e_n}\} : \{\dots R\}^m}
+            \textsc{TAndI} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; s : \{\dots R\}^m
+                \\ K;\; \Delta,R\{\ldots\} \;\vdash\; e:t}
+            {K;\;\Gamma,\Delta \;\vdash\;
+                \textbf{let} \; \{.1,\dots,.n\} = s \; \textbf{in} \; e : t}
+            \textsc{TAndE} \and
+        \inferrule
+            {\forall n \in \text{keys}\;R: \quad K;\Gamma \;\vdash\; e_n : R[n]
+                \\\\ K \;\vdash\; \text{sup} \; R \le m}
+            {K;\Gamma \;\vdash\; [\overline{.n: e_n}] : [\dots R]^m}
+            \textsc{TWithI} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; w : [\dots R]^m \\ n \in \text{keys} \; R}
+            {K;\Gamma \;\vdash\; w.n : R[n]}
+            \textsc{TWithE} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; e : R(|n|)
+                \\ K \;\vdash\; \text{mul} \; R(|n|) \le m}
+            {K;\Gamma \;\vdash\; .n \; e : (|\dots R|)^m}
+            \textsc{TOrI} \and
+        \inferrule
+            {K;\Gamma \;\vdash\; o : (|\dots R|)^m
+                \\\\ \forall n \in \text{keys}\;R:
+                \quad K;\; x:R(|n|),\; \Delta \;\vdash\; e_n : t}
+            {K;\;\Gamma,\Delta \;\vdash\; \textbf{case} \; o
+                \; \textbf{of} \; (\overline{.n \; x := e_n}) : t}
+            \textsc{TOrE}
+    \end{mathpar}
+    \caption{Terms of Algebraic Data Types}
+    \label{terms-2}
+\end{figure}
+
+\chapter{Surface Language}
+
+OdLang itself is a syntactic extension over its core incorporating a new kind
+(kind of effects), a new type constructor (effectful computation) and a few
+features revolving around recursion and pattern-matching. Last but not
+least, while core language is typed explicitly, surface language has a few
+tweaks to reduce amount of type annotations and improve their readability.
+
+\section{Type-level quality of life improvements}
+
+Here we list more or less expected and conventional features of a modern
+functional programming language along with novel pieces of syntactic sugar.
+
+\begin{enumerate}
+    \item Core has only type-level pairs. However, OdLang has arbitrary nonempty
+        and nonsingular type-level tuples:
+\begin{verbatim}
+tuple Quadruple : type * multiplicity * data * type :=
+    < {}*, !, String, String? >
+\end{verbatim}
+        Desugaring is trivial: \verb|*| is a right-associative \verb|x|;
+        components of tuples are folded with \verb|<_,_>| from right to left.
+
+        To access components of a type-level tuple, one can pattern-match on it:
+\begin{verbatim}
+tuple < _, _, Third, _ >
+    : type * multiplicity * data * type
+    := Quadruple
+\end{verbatim}
+        Desugaring is also trivial and involves repeated applications of
+        \verb|snd| and one application of \verb|fst| for each component except
+        for the last.
+    \item TODO: recursive types via recursive data.
+    \item Using type-level \verb|fix| explicitly is cumbersome. One can build a
+        dependency graph of type-level expressions and use \verb|fix| for
+        strongly connected components. The same approach is used on the term
+        level for recursive functions and was originally described in
+        \cite{spj}.
+
+        Before desugaring:
+\begin{verbatim}
+type Fix (f : type -> type) := f (Fix f)
+
+type Red := { head : Int*, tail : (() -> Blue)* }*
+type Blue := { head : Int*, tail : (() -> Red)* }*
+\end{verbatim}
+        After desugaring:
+\begin{verbatim}
+type Fix (f : type -> type) := (fix t : type . f t)
+
+tuple <Red, Blue> : type * type :=
+    (fix <r, b> : type * type . <
+        { head : Int*, tail : (() -> b)* }*,
+        { head : Int*, tail : (() -> r)* }*,
+    >)
+\end{verbatim}
+    \item In most cases, kind of operator and forall arguments can be inferred
+        from its usage in the resulting expression:
+\begin{verbatim}
+data Beside f r := {...r, ...(f @ r)}
+    -- r is inferred to be a row of types
+    -- f is inferred to be a (type -> type) operator
+\end{verbatim}
+        The case where inference fails can be seen above, in \verb|Fix| case,
+        because \verb|f| can be kinded as \verb|data -> data|, too.
+
+        To perform said kind inference, one can utilize a standard unification
+        algorithm \cite{milner}.
+    \item Following convention in Haskell, we can forbid lowercase type-level
+        entities and assume that every lowercase name in a type is an argument
+        of a forall binder. However, the ordering of forall binders becomes
+        arbitrary; to compensate for that, we provide a way to specify a named
+        type argument:
+\begin{verbatim}
+TODO
+\end{verbatim}
+    \item Omnipresent multiplicity annotations obscure type signatures.
+        However, certain annotations can be omit. For example, annotations on a
+        record and on nearly all arrows are elided here:
+\begin{verbatim}
+type Fmap f m := forall a b. (a -> b) % m -> f a -> f b
+
+pair : a -> b -> { fst: a, snd: b } :=
+    | x, y => { fst: x, snd: y }
+\end{verbatim}
+        Following typing rules, we can only generate constraints on annotations,
+        but not annotations themselves. Therefore we cannot infer them, but we
+        can introduce sane defaults for common cases, as is done with lifetime
+        annotations in Rust \cite{elision}. We propose two elision rules:
+        \begin{enumerate}
+            \item For arrow and forall types, choose the most permissive
+                annotation;
+            \item For algebraic data types, introduce a new annotation variable.
+        \end{enumerate}
+        Applying elision rules to the expressions above, we get:
+\begin{verbatim}
+type Fmap f m := (forall a. (forall b.
+    ((a -> b) % m -> (f a -> f b) % m)*
+)*)*
+
+pair : (forall a. (forall b . (forall m .
+    (a -> (
+        b -> { fst: a, snd: b } % (m \/ mul a \/ mul b)
+    ) % mul a)*
+)*)*)* :=
+    ...
+\end{verbatim}
+    \item OdLang Core allows records, but not tuples. Tuples in surface language
+        are encoded using a record type of sufficient arity:
+\begin{verbatim}
+type Tuple4 a b c d := { n1: a, n2: b, n3: c, n4: d }
+\end{verbatim}
+        Instead of doing this, we could represent tuples as nested pairs, but
+        this representation does not bring any immediate benefits.
+    \item OdLang Core does not have a way to constrain multiplicities. However,
+        we can use \verb|/\| to relax constraints multiplicities impose
+        themselves:
+\begin{verbatim}
+dup : (a <= +) :> a -> (a, a) :=
+    | x => (x, x)
+
+dup' : a % (m /\ +) -> (a % (m /\ +), a % (m /\ +)) :=
+    | x => (x, x)
+\end{verbatim}
+\end{enumerate}
+
+\section{Term-level quality of life improvements}
+
+Of course, OdLang includes nested pattern-matching and pattern-matching of
+product types. In addition, we include \verb|let| expressions and \verb|where|
+blocks as they are in Haskell. Pattern-matching has to be exhaustive. Recursive
+functions can be defined via $Y$ combinator (or any other fixpoint combinator)
+which is typeable in the Core language thanks to equirecursive types.
+
+\begin{enumerate}
+    \item Named functions admit a more compact declaration:
+\begin{verbatim}
+row Fin2 a b where
+    fst: a
+    snd: b
+
+data Pair a b := { ...(Fin2 a b) }
+
+pair : a -> b -> Pair a b :=
+    | x, y => { fst: x, snd: y }
+
+pair' (x : a) (y : b) : Pair a b :=
+    { fst: x, snd: y }
+\end{verbatim}
+    \item Lambda expressions followed by a \verb|case| statement admit a more
+        compact declaration:
+\begin{verbatim}
+type List m a := (|
+    Nil: {} % m
+    Cons: (a, List m a) % (m \/ mul a)
+|) % (m \/ mul a)
+
+foldr (f : a -> b -> b) (s : b) : List m a -> b :=
+    | xs => case xs of
+        Nil _ => s
+        Cons (x, xs) => f x (foldr f s xs)
+
+foldr' (f : a -> b -> b) (s : b) : List m a -> b :=
+    | Nil _ => s
+    | Cons (x, xs) => f x (foldr' f s xs)
+\end{verbatim}
+    \item Dot notation is available both for \verb|[]|-types and for records:
+\begin{verbatim}
+ifThenElse : Bool -> [...(Fin2 a a)] -> a :=
+    | True, opts => opts.fst
+    | False, opts => opts.snd
+    -- already in Core, desugaring is not needed
+
+join (f : a -> b -> c) (p : Pair a b) : c := f p.fst p.snd
+
+join' : (a -> b -> c) -> Pair a b -> c :=
+    | f, p => let { fst, snd } := p in f fst snd
+\end{verbatim}
+\end{enumerate}
+
+\section{Algebraic effects}
+
+\subsection{Effect types}
+
+As you might remember, the biggest hurdle of this project is trying to
+incorporate algebraic effects into a sound substructural type system. We start
+with introducing a new kind, \verb|effect|:
+
+\begin{verbatim}
+effect State s where
+    modifyState: (s -> s)! ->! {}*
+
+effect Generator t where
+    yield: t ->! {}*
+\end{verbatim}
+
+Effect is a list of operations a corresponding computation can do. From
+imperative point of view, each operation is a side-effectful function.
+Multiplicity annotation after its arrow describes an amount of times a control
+flow might return to the point where operation was called.
+
+Effects can be joined: \verb|State (List ! t) & Generator t|.
+
+Denoting the type of a computation requiring effect \verb|e| and yielding a
+result of type \verb|a| as \verb+e |= a+, let us describe the desugaring of
+effects into Core language.
+
+Effects themselves are rows of triples \verb|type * multiplicity * type|:
+
+\begin{verbatim}
+row State s where
+    modifyState: < (s -> s)!, !, {}* >
+
+row Generator t where
+    yield: < t, !, {}* >
+\end{verbatim}
+
+Therefore joining effects is the same as joining rows. In addition, effect
+polymorphism becomes a special case of row polymorphism.
+
+Given an effect row \verb|e| and a type \verb|a|, \verb+e |= a+ is best
+described as an operator:
+
+\begin{verbatim}
+type intoEntry rec <from, m, to> :=
+    (from, (to -> rec % (m \/ mul to)) % m) % (m \/ mul from)
+
+data (e |= a) := (|
+    pure: a,
+    ...(intoEntry (e |= a) @ e)
+|)
+\end{verbatim}
+
+\subsection{Computations}
+
+While on term level, effectful operations are typed as functions accepting its
+argument and continuation. For example, \verb|yield| is typed as
+
+\begin{verbatim}
+t -> ({}* -> (Generator t & e |= a)!)! -> Generator t & e |= a
+\end{verbatim}
+
+One can see that this is minor syntactic sugar over creation of a corresponding
+variant of a union. However, passing continuations as is leads to well-known
+issue of callback hell:
+
+\begin{verbatim}
+countToThree : Generator Nat |= Unit :=
+    yield 1 | _ =>
+        yield 2 | _ =>
+            yield 3 | x => pure x
+\end{verbatim}
+
+We solve this by introducing something analogous to do-notation in Haskell.
+\verb|x <- expr; y| means \verb+expr | x => y+. We can also ignore the result:
+\verb|x; y| means \verb+x | _ => y+. Using this new notation,
+\verb|countToThree| becomes:
+
+\begin{verbatim}
+countToThree : Generator Nat |= Unit := do
+    yield 1
+    yield 2
+    yield 3
+    pure {}
+\end{verbatim}
+
+One last issue to solve is about running one computation inside another. Using
+our new notation, it is enough to provide the following function:
+
+\begin{verbatim}
+run : (e >= m) :> (e |= a) -> (a -> e |= b) % m -> e |= b
+\end{verbatim}
+
+Note the new kind of multiplicity constraint: \verb|e >= m| for effect \verb|e|
+means ``\verb|n >= m| for all multiplicities \verb|n| in \verb|e|''. Desugaring
+is similar to what is done with \verb|a <= m| constraints, only here we use
+\verb|\/| instead of \verb|/\|.
+
+\subsection{Handlers}
+
+After desugaring, effectful computations become recursive open unions. Therefore
+handlers have to be recursive functions on such unions:
+
+\begin{verbatim}
+collect : (Generator Nat & e |= Unit)
+        -> State (List ! Nat) & e |= Unit :=
+    | pure a => pure a
+    | yield x cont => do
+        modifyState | xs => Cons (x, xs)
+        collect (cont {})
+    | *other x cont => other x | y => collect (cont y)
+\end{verbatim}
+
+However, catch-all case is the same for every effect-polymorphic handler. We can
+let programmers omit it. Same for \verb|pure| cases in handlers that do not
+change the result of the computation.
+
+While we're at it, let's write a \verb|run| function from previous section.
+
+\begin{verbatim}
+run : (e >= m) :> (e |= a) -> (a -> e |= b) % m -> e |= b :=
+    | pure x, f => f x
+    | *rest x k, f => rest x | y => run (k y) f
+\end{verbatim}
+
+Now, the purpose of the constraint becomes clear.
+
+\section{Bidirectional type checking}
+
+Although we managed to simplify type annotations by employing elision rules,
+kind inference and implicit quantification, we still want to minify the amount
+of types programmer has to write out. This is the main task of type inference;
+two extremes of type inference landscape include:
+
+\begin{enumerate}
+    \item Global type inference in Hindley-Milner style type systems, where the
+        whole program can be written without a single type annotation
+        \cite{milner};
+    \item Extremely local type inference, where only the most obvious
+        annotations can be omit \cite{go}.
+\end{enumerate}
+
+In our case, the necessity to only annotate top-level function declarations
+seems plausible; in other words, we want to annotate introduction forms, but not
+elimination forms. This is really close to the approach of bidirectional type
+checking \cite{bidirectional} in which we split one typing judgement into two: a
+type \textit{synthesis} judgement and type \textit{checking} judgement. Care
+must be taken while splitting the judgement; we also have to account for
+implicit quantification because it makes implicit instantiation necessary.
+
+TODO: bidirectional type checking.
+
+\section{Future extensions}
+
+As of now, the surface language lacks two common features of pure functional
+languages: nominal types and typeclasses. Both are left out of scope because
+they are mostly unrelated to the algebraic effects as we approached it. In
+addition, nominal types do not pose a significant challenge. On the other hand,
+typeclasses in a substructural type system face new problems. For example,
+consider a conventional Functor typeclass:
+
+\begin{verbatim}
+class Functor f where
+    fmap : (a -> b) -> f a -> f b
+\end{verbatim}
+
+First of all, \verb|f| has to be a functor from types to types, not from data to
+data. This limits a space of possible instances. Furthermore, an \verb|a -> b|
+argument's multiplicity is assumed to be \verb|*|, however certain data types
+(\verb|Maybe|, \verb|NonEmpty| in Haskell) can assume stricter multiplicities.
+Therefore, we either have to have four similar typeclasses or introduce one
+two-param type class. Either decision motivates us to design a novel typeclass
+hierarchy which is way out of scope for this paper, although it is tackled in
+\cite{linear-base}.
+
+\chapter{Conclusion}
+
+As a result of the practice, we came up with the design of a surface language
+with algebraic effects and handlers which nicely fit into a substructural type
+system. This language features effect, row and multiplicity polymorphism and is
+suitable for modeling complex effectful interactions. All related algorithms are
+elaborated and are ready to be implemented in an interpreter in Haskell which
+will be presented as the main result of our thesis.
+
+Designing one more programming language might not change anything in the grand
+scheme of things; however, in order to reach the ideal future where every
+programmer writes programs in languages with effect types, we as a whole
+programming community need enough failed attempts to learn from and working
+alternatives to choose from.
+
+TODO: finish conclusion, check bibliography
+
+\section{Results}
+
+It is expected to will have implemented an interpreter of the language described
+above, including the split in the surface and core languages: logical rules of
+the core language are already properly written out, and the Haskell ecosystem
+has all the necessary tools.
+
+Type inference and the existence of principal types in the surface language are
+highly anticipated because both row types and substructural types play nicely
+with Hindley-Milner. However, general equirecursive types may pose a threat to
+the type inference, therefore they might be hidden beneath the surface.
+
+\section{Conclusion}
+
+Utilising the recent advancements in type theory, we developed a polished model
+of computations with side effects which is an improvement upon analogues in
+terms of soundness and, theoretically, performance. While doing so, we made
+initially unrelated constructs from different type systems interplay nicely: row
+polymorphism with substructural typing, both type-level pairs and row
+polymorphism with algebraic effects... In addition, we saved ourselves the
+headache of developing a dedicated runtime for algebraic effects using a
+well-typed encoding into continuation-passing style.
+
+The most notable limitation of our solution is that core language is hardly
+extensible: generalized algebraic data types cannot be easily fit into it;
+coexistence of dependent types with substructural types is still an ongoing
+research topic;... To overcome this limitation, we can make use of the
+two-layered architecture of the language and change core language independently
+from the surface to incorporate new features.
+
+Nevertheless, as it was said in the beginning, the primary goals after this
+project are to formally verify the soundness of the type system and to write a
+self-hosting compiler. The first one is needed primarily to exclude the human
+factor; writing a compiler is required to fulfill promises of performance.
+
+Designing one more programming language might not change anything in the grand
+scheme of things; however, in order to reach the ideal future where every
+programmer writes programs in languages with effect types, we as a whole
+programming community need enough failed attempts to learn from and working
+alternatives to choose from.
+
+\bibliographystyle{IEEEtran}
+\bibliography{thesis}
+
+\end{document}

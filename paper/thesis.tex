@@ -6,6 +6,7 @@
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{mathpartir}
+\usepackage{mathabx}
 \usepackage{algorithmic}
 \usepackage{graphicx}
 \usepackage{textcomp}
@@ -292,6 +293,10 @@ them as ``$E$-terms''.
             {K \;\vdash\; \text{mul} \; t :: \text{mult}}
             \textsc{KMul} \and
         \inferrule
+            {K \;\vdash\; t :: \text{type}}
+            {K \;\vdash\; \text{dat} \; t :: \text{data}}
+            \textsc{KDat} \and
+        \inferrule
             {k, k' \; \text{kind} \\ K \;\vdash\; r :: \text{row} \; k
                 \\ K \;\vdash\; t \;::\; k \to k'}
             {K \;\vdash\; t \;@\; r \;::\; \text{row} \; k'}
@@ -383,6 +388,7 @@ this evaluation strategy yields opaque $E$-terms (given they are of kind
         partial valuation which disproves equality of modalities ($c$ components
         do not matter). Otherwise check the equality for the $c$ part.
 
+    \newpage
     \item EQUALITY OF MONOTONIC BOOLEAN FORMULAE.
 
         \textbf{Input}: two boolean formulas $\phi, \psi$ consisting of boolean
@@ -616,13 +622,52 @@ and evaluation mutually recursive is not a problem because they still terminate.
 Declarative rules for terms follow straightforwardly from rules for data and are
 provided in Fig.\ref{terms-1}-\ref{terms-2}. Declarative rules for substructural
 term context are conventional and are provided in Fig.\ref{terms-1}. Note that
-while defining operations on rows, we have to account for polymorphic rows.
+while defining operations on rows, we have to account for polymorphic rows. We
+do this by introducing a special entities, called \textbf{keys} of rows. They
+include not only names of entries, but also aliases for $E$-terms; to fully
+formalize this, we would have to introduce a third context, context of keys and
+related existential variables, into the typing judgement; however, this brings
+little explanatory power so we leave the explanation textual.
 
-TODO: keys, row access, row as context
+Now, how many keys a row has? One for each unique field name and one if opaque
+$E$-terms are present. In addition, we define a row access operation $R[k]$,
+which semantically returns a value associated with $k$ in a row $R$. It works in
+the following way:
 
-\subsection{Context splitting}
+\begin{itemize}
+    \item if key is an entry field, and entry with such field is unique, return
+        the associated value;
+    \item if key is an entry field, but such entry is not unique, error out;
+    \item if key corresponds to $E$-terms, return the ``rounding'' of the types
+        of values in these terms. Rounding is a conservative estimation of types
+        a row contains which uses existential variables:
+        \[
+            \begin{array}{rl}
+                \lfloor f \;@\; r \rfloor ::=& f \lfloor r \rfloor \\
+                \lfloor \rho_k \rfloor ::=& \alpha(k)
+            \end{array}
+        \]
+        $\rho_k$ is an opaque $E$-term of kind \textbf{row} $k$ which is not a
+        $@$-term. $\alpha(k)$ is a term of kind $k$ which uses only KPair rule
+        and existential variables.
 
-TODO: about actual representation in the interpreter.
+        The next logical step would be to try to unify the obtained estimations
+        from all the $E$-terms. As we will see later, we do not need this
+        facility to support effect polymorphism; however it would be a good
+        idea to add the notion of ``most specific unifier'' later.
+
+        One thing to note: while a type contains existential variables, terms of
+        this type can only be used where these variables are well-scoped. Here,
+        a variable is well-scoped if the term is used as a value with a key
+        which was associated with a $E$-term.
+\end{itemize}
+
+Another important bit is a concept of tunneling which is originally described in
+\cite{tunnel}; while we do not use a dedicated runtime mechanisms for running
+algebraic effects, we still share the same issues while dealing with polymorphic
+rows, e.g. wrong \textbf{let} unpacking, \textbf{case} mishandling etc. While we
+have not yet figured out the way to bypass this problem, it is our top priority
+for the future.
 
 \begin{figure}
     \centering
@@ -707,7 +752,36 @@ TODO: about actual representation in the interpreter.
     \label{terms-2}
 \end{figure}
 
+\subsection{Context splitting}
+
+An important problem in implementing the substructural type system is a problem
+of context splitting. It is already apparent in the declarative rules in
+Fig.\ref{terms-1}-\ref{terms-2}. For example, while synthesizing the type of a
+result of a function application, how do we split an input context into $\Gamma$
+and $\Delta$? In our interpreter, we approach this by storing a description of
+context split in every term that requires context splitting for its
+corresponding logical rule. This description is a list of directions: for every
+variable instance in a context, there is a direction showing it in which part of
+term to go. It can be built by simple depth-first tree traversal.
+
+However, this approach has several limitations:
+
+\begin{itemize}
+    \item In TWithI and TOrE, the number of usages of a variable should be the
+        same across all branches;
+    \item In TAbs, the number of usages of a variable inside the function body
+        should already be known.
+\end{itemize}
+
+We overcome this by a) storing the number of usages at function abstraction;
+b) generating useless applications inside branches. For example, instead of
+$[a: \{p: x, q: x\}, b: x]$, we do $[a: (\lambda y. \{p: y, q: y\}) x, b: x]$.
+
 \chapter{Surface Language}
+
+While we do not present an interpreter of a surface language, we still provide
+an extensible description of its design along with schemas of all necessary
+algorithms.
 
 OdLang itself is a syntactic extension over its core incorporating a new kind
 (kind of effects), a new type constructor (effectful computation) and a few
@@ -739,7 +813,32 @@ tuple < _, _, Third, _ >
         Desugaring is also trivial and involves repeated applications of
         \verb|snd| and one application of \verb|fst| for each component except
         for the last.
-    \item TODO: recursive types via recursive data.
+    \item Inability to define recursive types is awkward (recall that we only
+        have recursive data). But we can provide a limited form of a type
+        recursion, the one where multiplicity of a recursed type does not depend
+        on itself. To desugar a recursive tuple with types, we at first replace
+        every occurence of recursed type $t$ with
+        $(\text{dat}\;t)^{\text{mul}\;t}$. Then we replace every \textbf{mul}
+        with its value which is expected after the unfolding and try to pull it
+        outside of $\mu$ (here is why independence from itself is important).
+        Finally, replace every \textbf{dat} with a fresh variable and erase
+        the modality from the corresponding value in the body of recursion.
+
+        An example should make procedure more clear:
+\begin{verbatim}
+tuple <Red, Blue> : type * type :=
+    fix (<r, b> : type * type . <
+        { head: Int*, tail: (() -> b)! }*,
+        { head: Int*, tail: (() -> r)? }+,
+    >)
+
+tuple <Red', Blue'> : type * type :=
+    (<<dr, db>, <mr, mb>> => <dr % mr, db % mb>)
+    <fix (<r, b> : data * data . <
+        { head: Int*, tail: (() -> b+)! },
+        { head: Int*, tail: (() -> r*)? }
+    >), <*, +>>
+\end{verbatim}
     \item Using type-level \verb|fix| explicitly is cumbersome. One can build a
         dependency graph of type-level expressions and use \verb|fix| for
         strongly connected components. The same approach is used on the term
@@ -748,14 +847,14 @@ tuple < _, _, Third, _ >
 
         Before desugaring:
 \begin{verbatim}
-type Fix (f : type -> type) := f (Fix f)
+data Fix (f : data -> data) := f (Fix f)
 
 type Red := { head : Int*, tail : (() -> Blue)* }*
 type Blue := { head : Int*, tail : (() -> Red)* }*
 \end{verbatim}
         After desugaring:
 \begin{verbatim}
-type Fix (f : type -> type) := (fix t : type . f t)
+data Fix (f : data -> data) := (fix t : data . f t)
 
 tuple <Red, Blue> : type * type :=
     (fix <r, b> : type * type . <
@@ -770,9 +869,6 @@ data Beside f r := {...r, ...(f @ r)}
     -- r is inferred to be a row of types
     -- f is inferred to be a (type -> type) operator
 \end{verbatim}
-        The case where inference fails can be seen above, in \verb|Fix| case,
-        because \verb|f| can be kinded as \verb|data -> data|, too.
-
         To perform said kind inference, one can utilize a standard unification
         algorithm \cite{milner}.
     \item Following convention in Haskell, we can forbid lowercase type-level
@@ -781,7 +877,12 @@ data Beside f r := {...r, ...(f @ r)}
         arbitrary; to compensate for that, we provide a way to specify a named
         type argument:
 \begin{verbatim}
-TODO
+const : (a -> (b -> a) % mul a)* :=
+    | x, y => x
+
+type Id := forall a. (a -> a)*
+
+ok : Int := const @{b: Id} 5 (| x => x)
 \end{verbatim}
     \item Omnipresent multiplicity annotations obscure type signatures.
         However, certain annotations can be omit. For example, annotations on a
@@ -1037,7 +1138,55 @@ type \textit{synthesis} judgement and type \textit{checking} judgement. Care
 must be taken while splitting the judgement; we also have to account for
 implicit quantification because it makes implicit instantiation necessary.
 
-TODO: bidirectional type checking.
+At first, we wanted to adapt the Quick Look inference engine \cite{quick-look}
+for impredicative polymorphism; however, after witnessing the backlash
+\cite{ql-backlash} in the enterprise Haskell community because of the way it
+interferes with eta-expansion, we decided to take a step back and employ
+predicative polymorphism, introducing named type application for the rare
+complex cases where impredicativity is required.
+
+Although we settled for predicative polymorphism, we still want to preserve
+higher-kindedness; lucky for us, exactly this kind of type system is
+bidirectionally type checked in a beautiful paper by J.Dunfield and
+N.R.Krishnaswami \cite{bidir-impl}. To extend it, we need to both add new
+checking/synthesis rules and extend algorithmic subtyping to solve equations
+with rows and multiplicities. The most interesting of the new bidirectional
+rules are provided in Fig.\ref{bidir-rules}; note that we do not check
+multiplicities as it will be done during the checking phase in the Core.
+
+\begin{figure}
+    \centering
+    \begin{mathpar}
+        \inferrule
+            {\forall n \in \text{keys}\;R:
+                \Psi \vdash e_n \Rightarrow R[n]}
+            {\Psi \vdash \{\overline{.n: e_n}\} \Rightarrow
+                \Pi (m :: \text{mult}). \{\ldots R\}^{m \lor \sup R}}
+            \textsc{DeclAndI$\Rightarrow$} \and
+        \inferrule
+            {\Psi \vdash w \Leftarrow [.n: t, \;\ldots R]^m}
+            {\Psi \vdash w.n \Leftarrow t}
+            \textsc{DeclWithE$\Leftarrow$} \and
+        \inferrule
+            {\Psi \vdash w \Leftarrow \{.n: t, \;\ldots R\}^m}
+            {\Psi \vdash w.n \Leftarrow t}
+            \textsc{DeclPun$\Leftarrow$} \and
+        \inferrule
+            {\Psi \vdash e \Rightarrow t}
+            {\Psi \vdash .n\;e \Rightarrow
+                \Pi \, r \, m. (|.n: t, \ldots r|)^{m \lor \text{mul}\;t}}
+            \textsc{DeclOrI$\Rightarrow$} \and
+    \end{mathpar}
+    \caption{Bidirectional rules for Algebraic Data Types}
+    \label{bidir-rules}
+\end{figure}
+
+Stated formally, a multiplicity equation problem sounds like: given a system of
+equalities on multiplicity formulas with variables in domains $X$ and $Y$, find
+any substitution for $X$ that system is satisfied under any substitution of $Y$.
+Row equation problem sounds exactly the same. The main difference is that while
+row equation problem could be solved as if it was a system of linear equations,
+a multiplicity equation problem does not have a simple solution.
 
 \section{Future extensions}
 
@@ -1064,43 +1213,25 @@ hierarchy which is way out of scope for this paper, although it is tackled in
 
 \chapter{Conclusion}
 
-As a result of the practice, we came up with the design of a surface language
+First of all, utilising the recent advancements in type theory, we developed a
+polished model of computations with side effects which is an improvement upon
+analogues in terms of soundness and, theoretically, performance. While doing so,
+we made initially unrelated constructs from different type systems interplay
+nicely: row polymorphism with substructural typing, both type-level pairs and
+row polymorphism with algebraic effects... In addition, we saved ourselves the
+headache of developing a dedicated runtime for algebraic effects using a
+well-typed encoding into continuation-passing style.
+
+Secondly, we have implemented an interpreter of the core language described
+above except for problems with tunneling whose resolution is our primary
+goal after the project.
+
+Last but not least, we came up with the design of a surface language
 with algebraic effects and handlers which nicely fit into a substructural type
 system. This language features effect, row and multiplicity polymorphism and is
 suitable for modeling complex effectful interactions. All related algorithms are
 elaborated and are ready to be implemented in an interpreter in Haskell which
 will be presented as the main result of our thesis.
-
-Designing one more programming language might not change anything in the grand
-scheme of things; however, in order to reach the ideal future where every
-programmer writes programs in languages with effect types, we as a whole
-programming community need enough failed attempts to learn from and working
-alternatives to choose from.
-
-TODO: finish conclusion, check bibliography
-
-\section{Results}
-
-It is expected to will have implemented an interpreter of the language described
-above, including the split in the surface and core languages: logical rules of
-the core language are already properly written out, and the Haskell ecosystem
-has all the necessary tools.
-
-Type inference and the existence of principal types in the surface language are
-highly anticipated because both row types and substructural types play nicely
-with Hindley-Milner. However, general equirecursive types may pose a threat to
-the type inference, therefore they might be hidden beneath the surface.
-
-\section{Conclusion}
-
-Utilising the recent advancements in type theory, we developed a polished model
-of computations with side effects which is an improvement upon analogues in
-terms of soundness and, theoretically, performance. While doing so, we made
-initially unrelated constructs from different type systems interplay nicely: row
-polymorphism with substructural typing, both type-level pairs and row
-polymorphism with algebraic effects... In addition, we saved ourselves the
-headache of developing a dedicated runtime for algebraic effects using a
-well-typed encoding into continuation-passing style.
 
 The most notable limitation of our solution is that core language is hardly
 extensible: generalized algebraic data types cannot be easily fit into it;
@@ -1109,10 +1240,11 @@ research topic;... To overcome this limitation, we can make use of the
 two-layered architecture of the language and change core language independently
 from the surface to incorporate new features.
 
-Nevertheless, as it was said in the beginning, the primary goals after this
-project are to formally verify the soundness of the type system and to write a
-self-hosting compiler. The first one is needed primarily to exclude the human
-factor; writing a compiler is required to fulfill promises of performance.
+Nevertheless, as it was said in the beginning, the subsequent goals after this
+project are to write an interpreter for the surface language, formally verify
+soundness of the type system and write a self-hosting compiler. The second one
+is needed primarily to exclude the human factor; writing a compiler is required
+to fulfill promises of performance.
 
 Designing one more programming language might not change anything in the grand
 scheme of things; however, in order to reach the ideal future where every

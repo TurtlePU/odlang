@@ -1,17 +1,17 @@
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Core.Type.Syntax where
 
 import Control.Monad.Free (Free (..), hoistFree, iter)
-import Data.Ap2 (Ap2 (..))
+import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifree (Bifree)
 import Data.Bifunctor (Bifunctor (..))
+import Data.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
 import Data.Position (Position)
-import Data.Reflection.Show (withReifiedShow, reflectShow)
-import Data.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
 
 ------------------------------------ KINDS -------------------------------------
 
@@ -129,17 +129,15 @@ instance Eq2 RowF where
 
 instance Show2 RowF where
   liftShowsPrec2 ia _ ib _ i = \case
-    REmpty k ->
-      showParen (i > app_prec) $ showString "{/} " . showsPrec (app_prec + 1) k
+    REmpty k -> appConst showsPrec "{/}" i k
     REntry k v ->
       showParen (i > colon_prec) $
         showString k . showString ": " . ia (colon_prec + 1) v
     RJoin l r ->
       showParen (i > join_prec) $
-        ib (join_prec + 1) l . showString " \\/ " . ib (join_prec + 1) r
+        ib join_prec l . showString " \\/ " . ib join_prec r
     where
-      app_prec = 10
-      colon_prec = 8
+      colon_prec = 4
       join_prec = 5
 
 type RowTerm t = Free (RowF t)
@@ -147,15 +145,6 @@ type RowTerm t = Free (RowF t)
 ------------------------------------- DATA -------------------------------------
 
 data Connective = CAnd | CWith | COr deriving (Show, Eq)
-
-showConnective :: Connective -> ShowS -> ShowS
-showConnective c s =
-  showString (fst $ braces c) . s . showString (snd $ braces c)
-  where
-    braces = \case
-      CAnd -> ("{", "}")
-      CWith -> ("[", "]")
-      COr -> ("(|", "|)")
 
 data DataF n a
   = PArrow a a
@@ -188,9 +177,13 @@ instance Show2 DataF where
           . showsPrec (arr_prec + 1) k
           . showString ". "
           . ib (arr_prec + 1) t
-    PSpread c r -> showConnective c $ liftShowsPrec2Free ib ia la i r
+    PSpread c r -> parens (braces c) $ liftShowsPrec2Free ib ia la i r
     where
       arr_prec = 6
+      braces = \case
+        CAnd -> ("{", "}")
+        CWith -> ("[", "]")
+        COr -> ("(|", "|)")
 
 type DataTerm n a = Bifree (TypeF n) (DataF n) a a
 
@@ -223,3 +216,72 @@ instance Show2 TypeF where
       mod_prec = 4
 
 type TypeTerm n a = Bifree (DataF n) (TypeF n) a a
+
+------------------------------------ LAMBDA ------------------------------------
+
+data LambdaF a
+  = LVar Int
+  | LApp a a
+  | LAbs ProperKind a
+  | LSPair a a
+  | LPair a a
+  | LFst a
+  | LSnd a
+  | LPre a
+  | LMul a
+  | LFix SimpleKind a
+  | LMap a a
+  deriving (Functor)
+  deriving (Eq, Show) via (Ap LambdaF a)
+
+instance Eq1 LambdaF where
+  liftEq f l r = case (l, r) of
+    (LVar x, LVar y) -> x == y
+    (LApp g x, LApp h y) -> f g h && f x y
+    (LAbs k t, LAbs l u) -> k == l && f t u
+    (LSPair s t, LSPair u v) -> f s u && f t v
+    (LPair s t, LPair u v) -> f s u && f t v
+    (LFst t, LFst u) -> f t u
+    (LSnd t, LSnd u) -> f t u
+    (LPre t, LPre u) -> f t u
+    (LMul t, LMul u) -> f t u
+    (LFix k t, LFix l u) -> k == l && f t u
+    (LMap g x, LMap h y) -> f g h && f x y
+    _ -> False
+
+instance Show1 LambdaF where
+  liftShowsPrec ia la i = \case
+    LVar x -> showsPrec i x
+    LApp f x ->
+      showParen (i > app_prec) $
+        ia app_prec f . showString " " . ia (app_prec + 1) x
+    LAbs k t ->
+      showParen (i > abs_prec) $
+        showString "\\:: " . showsPrec (abs_prec + 1) k . ia abs_prec t
+    LSPair l r -> parens ("<", ">") $ ia 0 l . showString ", " . ia 0 r
+    LPair l r -> parens ("<", ">") $ ia 0 l . showString ", " . ia 0 r
+    LFst t -> app_const "fst" t
+    LSnd t -> app_const "snd" t
+    LPre t -> app_const "pre" t
+    LMul t -> app_const "mul" t
+    LFix k t ->
+      showParen (i > abs_prec) $
+        showString "μ:: " . showsPrec (abs_prec + 1) k . ia abs_prec t
+    LMap f x ->
+      showParen (i > map_prec) $
+        ia (map_prec + 1) f . showString " @ " . ia map_prec x
+    where
+      app_prec = 10
+      abs_prec = 0
+      map_prec = 6
+      app_const s t = appConst ia s i t
+
+type LambdaTerm = Free LambdaF
+
+---------------------------------- SHOW UTILS ----------------------------------
+
+parens :: (String, String) -> ShowS -> ShowS
+parens (l, r) s = showString l . s . showString r
+
+appConst :: (Int -> a -> ShowS) -> String -> Int -> a -> ShowS
+appConst p s i t = showParen (i > 10) $ showString s . showString " " . p 11 t

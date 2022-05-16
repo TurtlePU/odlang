@@ -9,19 +9,15 @@ module Core.Type.Syntax where
 
 import Control.Monad.Bifree (Bifree, bibimap, liftShowsPrec2Bifree)
 import Control.Monad.Free (Free, hoistFree, iter)
-import Control.Monad.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
+import Control.Monad.FreeBi (FreeBi)
 import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Fix (Fix)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
 import Data.Hashable (Hashable)
-import Data.Hashable.Lifted (Hashable1)
+import Data.Hashable.Lifted (Hashable1 (..), Hashable2 (..))
 import Data.Position (Position)
 import GHC.Generics (Generic, Generic1)
-
-instance (Functor f, Hashable1 f) => Hashable1 (Free f)
-
-instance (Hashable a, Hashable (f (Free f a))) => Hashable (Free f a)
 
 ------------------------------------ KINDS -------------------------------------
 
@@ -50,12 +46,10 @@ data MultF l a
   | MJoin a a
   | MMeet a a
   deriving (Foldable, Generic, Generic1)
-  deriving (Functor, Eq1, Show1) via (Ap2 MultF l)
-  deriving (Eq, Show) via (Ap2 MultF l a)
+  deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 MultF l)
+  deriving (Eq, Show, Hashable) via (Ap2 MultF l a)
 
-instance (Hashable l, Hashable a) => Hashable (MultF l a)
-
-instance Hashable l => Hashable1 (MultF l)
+instance Hashable2 MultF where
 
 instance Bifunctor MultF where
   bimap f g = \case
@@ -132,12 +126,10 @@ data RowF e r
   | REntry EntryKey e
   | RJoin r r
   deriving (Generic, Generic1)
-  deriving (Functor, Eq1, Show1) via (Ap2 RowF e)
-  deriving (Eq, Show) via (Ap2 RowF e r)
+  deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 RowF e)
+  deriving (Eq, Show, Hashable) via (Ap2 RowF e r)
 
-instance Hashable e => Hashable1 (RowF e)
-
-instance (Hashable e, Hashable r) => Hashable (RowF e r)
+instance Hashable2 RowF where
 
 instance Bifunctor RowF where
   bimap f g = \case
@@ -165,7 +157,7 @@ instance Show2 RowF where
       colon_prec = 4
       join_prec = 5
 
-type RowTerm t = Free (RowF t)
+type RowTerm = FreeBi RowF
 
 ------------------------------------- DATA -------------------------------------
 
@@ -178,26 +170,26 @@ data DataF n a
   | PForall ProperKind a
   | PSpread Connective (RowTerm a n)
   deriving (Generic)
-  deriving (Functor, Eq1, Show1) via (Ap2 DataF n)
-  deriving (Eq, Show) via (Ap2 DataF n a)
+  deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 DataF n)
+  deriving (Eq, Show, Hashable) via (Ap2 DataF n a)
 
-instance (Hashable n, Hashable a) => Hashable (DataF n a)
+instance Hashable2 DataF where
 
 instance Bifunctor DataF where
   bimap f g = \case
     PArrow d c -> PArrow (g d) (g c)
     PForall k t -> PForall k (g t)
-    PSpread c r -> PSpread c (bimapFree g f r)
+    PSpread c r -> PSpread c (bimap g f r)
 
 instance Eq2 DataF where
   liftEq2 f g l r = case (l, r) of
     (PArrow c d, PArrow c' d') -> g c c' && g d d'
     (PForall k t, PForall k' t') -> k == k' && g t t'
-    (PSpread c r, PSpread c' r') -> c == c' && liftEq2Free g f r r'
+    (PSpread c r, PSpread c' r') -> c == c' && liftEq2 g f r r'
     _ -> False
 
 instance Show2 DataF where
-  liftShowsPrec2 ia la ib _ i = \case
+  liftShowsPrec2 ia la ib lb i = \case
     PArrow c d ->
       showParen (i > arr_prec) $
         ib (arr_prec + 1) c . showString " -> " . ib (arr_prec + 1) d
@@ -207,7 +199,7 @@ instance Show2 DataF where
           . showsPrec (arr_prec + 1) k
           . showString ". "
           . ib (arr_prec + 1) t
-    PSpread c r -> parens (braces c) $ liftShowsPrec2Free ib ia la i r
+    PSpread c r -> parens (braces c) $ liftShowsPrec2 ib lb ia la i r
     where
       arr_prec = 6
       braces = \case
@@ -225,12 +217,10 @@ data TypeF n a = TLit
     tyMul :: MultTerm n
   }
   deriving (Generic, Generic1)
-  deriving (Functor, Eq1, Show1) via (Ap2 TypeF n)
-  deriving (Eq, Show) via (Ap2 TypeF n a)
+  deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 TypeF n)
+  deriving (Eq, Show, Hashable) via (Ap2 TypeF n a)
 
-instance Hashable n => Hashable1 (TypeF n)
-
-instance (Hashable n, Hashable a) => Hashable (TypeF n a)
+instance Hashable2 TypeF where
 
 instance Bifunctor TypeF where
   bimap f g (TLit p q m) = TLit p (g q) (fmap f m)
@@ -267,11 +257,9 @@ data LambdaF a
   | LFix SimpleKind a
   | LMap Position a a
   deriving (Functor, Generic, Generic1)
-  deriving (Eq, Show) via (Ap LambdaF a)
+  deriving (Eq, Show, Hashable) via (Ap LambdaF a)
 
 instance Hashable1 LambdaF
-
-instance Hashable a => Hashable (LambdaF a)
 
 instance Eq1 LambdaF where
   liftEq f l r = case (l, r) of
@@ -333,16 +321,17 @@ data TermF a
   | TRow (RowTerm a a)
   | TMul (MultTerm a)
   deriving (Eq, Generic)
-  deriving (Show) via (Ap TermF a)
+  deriving (Show, Hashable) via (Ap TermF a)
 
-instance Hashable a => Hashable (TermF a)
+instance Hashable1 TermF where
+  liftHashWithSalt = error "TODO"
 
 instance Functor TermF where
   fmap f = \case
     TLam t -> TLam (fmap f t)
     TType t -> TType (bibimap f f t)
     TData t -> TData (bibimap f f t)
-    TRow t -> TRow (bimapFree f f t)
+    TRow t -> TRow (bimap f f t)
     TMul t -> TMul (fmap f t)
 
 instance Show1 TermF where
@@ -350,7 +339,7 @@ instance Show1 TermF where
     TLam t -> liftShowsPrec ia la i t
     TType t -> liftShowsPrec2Bifree ia ia ia la ia la i t
     TData t -> liftShowsPrec2Bifree ia ia ia la ia la i t
-    TRow t -> liftShowsPrec2Free ia ia la i t
+    TRow t -> liftShowsPrec2 ia la ia la i t
     TMul t -> liftShowsPrec ia la i t
 
 type Term = Fix TermF

@@ -1,43 +1,55 @@
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+
 module Control.Monad.FreeBi where
 
-import Control.Monad.Free (Free (..), hoistFree)
+import Control.Monad.Free (Free (..), hoistFree, iter)
 import Data.Aps (Ap2 (..))
+import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
-import Data.Functor.Classes (Eq2 (..), Show1 (..), Show2)
+import Data.Bitraversable (Bitraversable (..))
+import Data.Functor.Classes (Eq1, Eq2 (..), Show1 (..), Show2 (..))
+import Data.Hashable (Hashable)
+import Data.Hashable.Lifted (Hashable1 (..), Hashable2 (..))
 import Data.Reflection (reify)
-import Data.Reflection.Instances (ReifiedShow (..), reflectShow)
+import Data.Reflection.Instances
 
-firstFree ::
-  (Bifunctor f, Functor (f c)) => (a -> c) -> Free (f a) b -> Free (f c) b
-firstFree g = hoistFree (first g)
+newtype FreeBi f a b = FreeBi {runFreeBi :: Free (Ap2 f a) b}
+  deriving newtype (Applicative, Monad)
+  deriving (Functor, Foldable, Eq1, Show1, Hashable1) via (Ap2 (FreeBi f) a)
+  deriving (Eq, Show, Hashable) via (Ap2 (FreeBi f) a b)
 
-bimapFree ::
-  (Bifunctor f, Functor (f c)) =>
-  (a -> c) ->
-  (b -> d) ->
-  Free (f a) b ->
-  Free (f c) d
-bimapFree v w = fmap w . firstFree v
+instance (Functor f, Hashable1 f) => Hashable1 (Free f)
 
-liftEq2Free ::
-  Eq2 f =>
-  (a -> c -> Bool) ->
-  (b -> d -> Bool) ->
-  Free (f a) b ->
-  Free (f c) d ->
-  Bool
-liftEq2Free v w l r = case (l, r) of
-  (Pure x, Pure y) -> w x y
-  (Free l, Free r) -> liftEq2 v (liftEq2Free v w) l r
-  _ -> False
+instance (Bifunctor f, Hashable2 f) => Hashable2 (FreeBi f) where
+  liftHashWithSalt2 ha hb s (FreeBi x) = reify (ReifiedHashable ha) $ \p ->
+    liftHashWithSalt hb s $ hoistFree (first $ mkReflected p) x
 
-liftShowsPrec2Free ::
-  (Bifunctor f, Show2 f) =>
-  (Int -> a -> ShowS) ->
-  (Int -> b -> ShowS) ->
-  ([b] -> ShowS) ->
-  Int ->
-  Free (f a) b ->
-  ShowS
-liftShowsPrec2Free ia ib lb i x = reify (ReifiedShow ia) $ \p ->
-  liftShowsPrec ib lb i $ hoistFree (Ap2 . first (reflectShow p)) x
+instance Bifunctor f => Bifunctor (FreeBi f) where
+  bimap f g = FreeBi . fmap g . hoistFree (first f) . runFreeBi
+
+instance (Bifunctor f, Bifoldable f) => Bifoldable (FreeBi f) where
+  bifoldMap g h = iter (bifoldMap g id) . fmap h . runFreeBi
+
+instance Bitraversable f => Bitraversable (FreeBi f) where
+  bitraverse g h = fmap FreeBi . impl . runFreeBi
+    where
+      impl = \case
+        Pure x -> Pure <$> h x
+        Free w -> Free <$> bitraverse g impl w
+
+instance Bitraversable f => Traversable (FreeBi f a) where
+  traverse = bitraverse pure
+
+instance Eq2 f => Eq2 (FreeBi f) where
+  liftEq2 v w (FreeBi l) (FreeBi r) = impl l r
+    where
+      impl l r = case (l, r) of
+        (Pure x, Pure y) -> w x y
+        (Free l, Free r) -> liftEq2 v impl l r
+        _ -> False
+
+instance (Bifunctor f, Show2 f) => Show2 (FreeBi f) where
+  liftShowsPrec2 ia la ib lb i (FreeBi x) = reify (ReifiedShow ia) $ \p ->
+    liftShowsPrec ib lb i $ hoistFree (first $ mkReflected p) x

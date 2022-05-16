@@ -5,30 +5,35 @@
 
 module Data.Reflection.Instances where
 
+import Data.Hashable (Hashable (..))
 import Data.Proxy (Proxy (..))
 import Data.Reflection (Reifies (..), reify)
 
+newtype Reflected s a = Reflect a
+
+mkReflected :: Proxy s -> a -> Reflected s a
+mkReflected _ = Reflect
+
 ------------------------------------- SHOW -------------------------------------
-
-newtype ReflectedShow s a = ReflectShow a
-
-reflectShow :: Proxy s -> a -> ReflectedShow s a
-reflectShow _ = ReflectShow
 
 newtype ReifiedShow a = ReifiedShow {reifiedShowsPrec :: Int -> a -> ShowS}
 
-instance Reifies s (ReifiedShow a) => Show (ReflectedShow s a) where
-  showsPrec i (ReflectShow x) =
+instance Reifies s (ReifiedShow a) => Show (Reflected s a) where
+  showsPrec i (Reflect x) =
     reifiedShowsPrec (reflect (Proxy :: Proxy s)) i x
 
 -------------------------------------- EQ --------------------------------------
 
-newtype ReflectedEq s a = ReflectEq a
-
-reflectEq :: Proxy s -> a -> ReflectedEq s a
-reflectEq _ = ReflectEq
-
 newtype ReifiedEq a = ReifiedEq {reifiedEq :: a -> a -> Bool}
 
-instance Reifies s (ReifiedEq a) => Eq (ReflectedEq s a) where
-  ReflectEq l == ReflectEq r = reifiedEq (reflect (Proxy :: Proxy s)) l r
+instance Reifies s (ReifiedEq a) => Eq (Reflected s a) where
+  Reflect l == Reflect r = reifiedEq (reflect (Proxy :: Proxy s)) l r
+
+----------------------------------- HASHABLE -----------------------------------
+
+newtype ReifiedHashable a = ReifiedHashable
+  {reifiedHashWithSalt :: Int -> a -> Int}
+
+instance Reifies s (ReifiedHashable a) => Hashable (Reflected s a) where
+  hashWithSalt s (Reflect x) =
+    reifiedHashWithSalt (reflect (Proxy :: Proxy s)) s x

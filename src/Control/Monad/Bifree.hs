@@ -120,7 +120,7 @@ liftEq2Bifree u s v w l r = reify (ReifiedEq u) $ \p ->
   reify (ReifiedEq s) $ \q -> liftEq2 v w (dohoist q p l) (dohoist q p r)
   where
     dohoist p q = bihoist (ap2 p) (ap2 q)
-    ap2 p = Ap2 . first (reflectEq p)
+    ap2 p = Ap2 . first (mkReflected p)
 
 instance (Show1 g, Show1 f) => Show2 (Bifree g f) where
   liftShowsPrec2 ia la ib lb i = \case
@@ -143,7 +143,7 @@ liftShowsPrec2Bifree ia ib ic lc id ld i r = reify (ReifiedShow ia) $ \pa ->
   reify (ReifiedShow ib) $ \pb ->
     liftShowsPrec2 ic lc id ld i $ bihoist (ap2 pb) (ap2 pa) r
   where
-    ap2 p = Ap2 . first (reflectShow p)
+    ap2 p = Ap2 . first (mkReflected p)
 
 instance (Functor g, Functor f) => Bifunctor (Bifree g f) where
   bimap v w (BPure x) = BPure (w x)

@@ -255,16 +255,16 @@ type TypeTerm n a = Bifree (DataF n) (TypeF n) a a
 
 data LambdaF a
   = LVar Int
-  | LApp a a
+  | LApp Position a a
   | LAbs ProperKind a
   | LSPair a a
   | LPair a a
-  | LFst a
-  | LSnd a
-  | LPre a
-  | LMul a
+  | LFst Position a
+  | LSnd Position a
+  | LPre Position a
+  | LMul Position a
   | LFix SimpleKind a
-  | LMap a a
+  | LMap Position a a
   deriving (Functor, Generic, Generic1)
   deriving (Eq, Show) via (Ap LambdaF a)
 
@@ -275,44 +275,51 @@ instance Hashable a => Hashable (LambdaF a)
 instance Eq1 LambdaF where
   liftEq f l r = case (l, r) of
     (LVar x, LVar y) -> x == y
-    (LApp g x, LApp h y) -> f g h && f x y
+    (LApp p g x, LApp q h y) -> p == q && f g h && f x y
     (LAbs k t, LAbs l u) -> k == l && f t u
     (LSPair s t, LSPair u v) -> f s u && f t v
     (LPair s t, LPair u v) -> f s u && f t v
-    (LFst t, LFst u) -> f t u
-    (LSnd t, LSnd u) -> f t u
-    (LPre t, LPre u) -> f t u
-    (LMul t, LMul u) -> f t u
+    (LFst p t, LFst q u) -> p == q && f t u
+    (LSnd p t, LSnd q u) -> p == q && f t u
+    (LPre p t, LPre q u) -> p == q && f t u
+    (LMul p t, LMul q u) -> p == q && f t u
     (LFix k t, LFix l u) -> k == l && f t u
-    (LMap g x, LMap h y) -> f g h && f x y
+    (LMap p g x, LMap q h y) -> p == q && f g h && f x y
     _ -> False
 
 instance Show1 LambdaF where
   liftShowsPrec ia la i = \case
     LVar x -> showsPrec i x
-    LApp f x ->
+    LApp p f x ->
       showParen (i > app_prec) $
-        ia app_prec f . showString " " . ia (app_prec + 1) x
+        showsPrec (app_prec + 1) p
+          . showString " "
+          . ia app_prec f
+          . showString " "
+          . ia (app_prec + 1) x
     LAbs k t ->
       showParen (i > abs_prec) $
         showString "\\:: " . showsPrec (abs_prec + 1) k . ia abs_prec t
     LSPair l r -> parens ("<", ">") $ ia 0 l . showString ", " . ia 0 r
     LPair l r -> parens ("<", ">") $ ia 0 l . showString ", " . ia 0 r
-    LFst t -> app_const "fst" t
-    LSnd t -> app_const "snd" t
-    LPre t -> app_const "pre" t
-    LMul t -> app_const "mul" t
+    LFst p t -> app_const "fst" p t
+    LSnd p t -> app_const "snd" p t
+    LPre p t -> app_const "pre" p t
+    LMul p t -> app_const "mul" p t
     LFix k t ->
       showParen (i > abs_prec) $
         showString "μ:: " . showsPrec (abs_prec + 1) k . ia abs_prec t
-    LMap f x ->
+    LMap p f x ->
       showParen (i > map_prec) $
-        ia (map_prec + 1) f . showString " @ " . ia map_prec x
+        showsPrec (map_prec + 1) p
+          . ia (map_prec + 1) f
+          . showString " @ "
+          . ia map_prec x
     where
       app_prec = 10
       abs_prec = 0
       map_prec = 6
-      app_const s t = appConst ia s i t
+      app_const s p t = showsPrec (app_prec + 1) p . appConst ia s i t
 
 type LambdaTerm = Free LambdaF
 

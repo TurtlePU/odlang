@@ -28,6 +28,7 @@ dependencies:
 - free
 - reflection
 - data-fix
+- bifunctors
 
 library:
   source-dirs: src

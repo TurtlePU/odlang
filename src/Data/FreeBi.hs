@@ -1,7 +1,7 @@
 module Data.FreeBi where
 
 import Control.Monad.Free (Free (..), hoistFree)
-import Data.Ap2 (Ap2 (..))
+import Data.Aps (Ap2 (..))
 import Data.Bifunctor (Bifunctor (first))
 import Data.Functor.Classes (Eq2 (..), Show1 (..), Show2)
 import Data.Reflection.Show (reflectShow, withReifiedShow)

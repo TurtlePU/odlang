@@ -32,7 +32,7 @@ library
       Core.Term
       Core.Type.Syntax
       Core.TypeLevel
-      Data.Ap2
+      Data.Aps
       Data.Bifree
       Data.EqBag
       Data.FreeBi

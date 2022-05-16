@@ -31,28 +31,28 @@ data ProperKind
 
 -------------------------------- MULTIPLICITIES --------------------------------
 
-data MultT l a
+data MultF l a
   = MLit l
   | MJoin a a
   | MMeet a a
   deriving (Foldable)
-  deriving (Functor, Eq1, Show1) via (Ap2 MultT l)
-  deriving (Eq, Show) via (Ap2 MultT l a)
+  deriving (Functor, Eq1, Show1) via (Ap2 MultF l)
+  deriving (Eq, Show) via (Ap2 MultF l a)
 
-instance Bifunctor MultT where
+instance Bifunctor MultF where
   bimap f g = \case
     MLit b -> MLit (f b)
     MJoin l r -> MJoin (g l) (g r)
     MMeet l r -> MMeet (g l) (g r)
 
-instance Eq2 MultT where
+instance Eq2 MultF where
   liftEq2 f g l r = case (l, r) of
     (MLit b, MLit b') -> f b b'
     (MJoin l r, MJoin l' r') -> g l l' && g r r'
     (MMeet l r, MMeet l' r') -> g l l' && g r r'
     _ -> False
 
-instance Show2 MultT where
+instance Show2 MultF where
   liftShowsPrec2 ia _ ib _ i = \case
     MLit b -> ia i b
     MJoin l r ->
@@ -71,7 +71,7 @@ data MultLit = MultLit
   }
   deriving (Show, Eq)
 
-type MultTerm = Free (MultT MultLit)
+type MultTerm = Free (MultF MultLit)
 
 --------------------------------- BOOLEAN CLASS --------------------------------
 
@@ -94,40 +94,40 @@ instance Boolean Bool where
   meet = (&&)
   fromBool = id
 
-interpT :: Boolean b => MultT Bool b -> b
+interpT :: Boolean b => MultF Bool b -> b
 interpT = \case
   MLit x -> fromBool x
   MJoin l r -> l `join` r
   MMeet l r -> l `meet` r
 
-interp :: Boolean b => Free (MultT Bool) b -> b
+interp :: Boolean b => Free (MultF Bool) b -> b
 interp = iter interpT
 
 ------------------------------------- ROWS -------------------------------------
 
 type EntryKey = String
 
-data RowT e r
+data RowF e r
   = REmpty ProperKind
   | REntry EntryKey e
   | RJoin r r
-  deriving (Functor, Eq1, Show1) via (Ap2 RowT e)
-  deriving (Eq, Show) via (Ap2 RowT e r)
+  deriving (Functor, Eq1, Show1) via (Ap2 RowF e)
+  deriving (Eq, Show) via (Ap2 RowF e r)
 
-instance Bifunctor RowT where
+instance Bifunctor RowF where
   bimap f g = \case
     REmpty k -> REmpty k
     REntry k v -> REntry k (f v)
     RJoin l r -> RJoin (g l) (g r)
 
-instance Eq2 RowT where
+instance Eq2 RowF where
   liftEq2 f g l r = case (l, r) of
     (REmpty k, REmpty k') -> k == k'
     (REntry k v, REntry k' v') -> k == k' && f v v'
     (RJoin l r, RJoin l' r') -> g l l' && g r r'
     _ -> False
 
-instance Show2 RowT where
+instance Show2 RowF where
   liftShowsPrec2 ia _ ib _ i = \case
     REmpty k ->
       showParen (i > app_prec) $ showString "{/} " . showsPrec (app_prec + 1) k
@@ -142,7 +142,7 @@ instance Show2 RowT where
       colon_prec = 8
       join_prec = 5
 
-type RowTerm t = Free (RowT t)
+type RowTerm t = Free (RowF t)
 
 ------------------------------------- DATA -------------------------------------
 
@@ -157,27 +157,27 @@ showConnective c s =
       CWith -> ("[", "]")
       COr -> ("(|", "|)")
 
-data DataT n a
+data DataF n a
   = PArrow a a
   | PForall ProperKind a
   | PSpread Connective (RowTerm a n)
-  deriving (Functor, Eq1, Show1) via (Ap2 DataT n)
-  deriving (Eq, Show) via (Ap2 DataT n a)
+  deriving (Functor, Eq1, Show1) via (Ap2 DataF n)
+  deriving (Eq, Show) via (Ap2 DataF n a)
 
-instance Bifunctor DataT where
+instance Bifunctor DataF where
   bimap f g = \case
     PArrow d c -> PArrow (g d) (g c)
     PForall k t -> PForall k (g t)
     PSpread c r -> PSpread c (bimapFree g f r)
 
-instance Eq2 DataT where
+instance Eq2 DataF where
   liftEq2 f g l r = case (l, r) of
     (PArrow c d, PArrow c' d') -> g c c' && g d d'
     (PForall k t, PForall k' t') -> k == k' && g t t'
     (PSpread c r, PSpread c' r') -> c == c' && liftEq2Free g f r r'
     _ -> False
 
-instance Show2 DataT where
+instance Show2 DataF where
   liftShowsPrec2 ia la ib _ i = \case
     PArrow c d ->
       showParen (i > arr_prec) $
@@ -192,25 +192,25 @@ instance Show2 DataT where
     where
       arr_prec = 6
 
-type DataTerm n a = Bifree (TypeT n) (DataT n) a a
+type DataTerm n a = Bifree (TypeF n) (DataF n) a a
 
 ------------------------------------- TYPE -------------------------------------
 
-data TypeT n a = TLit
+data TypeF n a = TLit
   { tyPos :: Position,
     tyPre :: a,
     tyMul :: MultTerm n
   }
-  deriving (Functor, Eq1, Show1) via (Ap2 TypeT n)
-  deriving (Eq, Show) via (Ap2 TypeT n a)
+  deriving (Functor, Eq1, Show1) via (Ap2 TypeF n)
+  deriving (Eq, Show) via (Ap2 TypeF n a)
 
-instance Bifunctor TypeT where
+instance Bifunctor TypeF where
   bimap f g (TLit p q m) = TLit p (g q) (fmap f m)
 
-instance Eq2 TypeT where
+instance Eq2 TypeF where
   liftEq2 f g (TLit p q m) (TLit p' q' m') = p == p' && g q q' && liftEq f m m'
 
-instance Show2 TypeT where
+instance Show2 TypeF where
   liftShowsPrec2 ia la ib _ i (TLit p q m) =
     showParen (i > 0) $
       showsPrec (app_prec + 1) p
@@ -222,4 +222,4 @@ instance Show2 TypeT where
       app_prec = 10
       mod_prec = 4
 
-type TypeTerm n a = Bifree (DataT n) (TypeT n) a a
+type TypeTerm n a = Bifree (DataF n) (TypeF n) a a

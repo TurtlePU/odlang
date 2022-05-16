@@ -1,6 +1,8 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Data.Bifree where
 
@@ -10,14 +12,21 @@ import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bitraversable (Bitraversable (..))
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
+import Data.Hashable (Hashable)
 import Data.Reflection (reify)
 import Data.Reflection.Instances
+import GHC.Generics (Generic, Generic1)
 
 data Bifree g f b a
   = BPure a
   | BFree (f (Bifree f g a b))
+  deriving (Generic)
   deriving (Functor, Foldable, Eq1, Show1) via (Ap2 (Bifree g f) b)
   deriving (Eq, Show) via (Ap2 (Bifree g f) b a)
+
+instance
+  (Hashable a, Hashable (f (Bifree f g a b))) =>
+  Hashable (Bifree g f b a)
 
 biliftF' :: Functor g => g a -> Bifree f g a b
 biliftF' = BFree . fmap BPure

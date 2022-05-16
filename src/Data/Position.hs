@@ -1,11 +1,16 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE TupleSections #-}
 
 module Data.Position where
 
+import Data.Hashable (Hashable)
 import Data.Result
+import GHC.Generics (Generic)
 
-data Position
+data Position deriving (Generic)
+
+instance Hashable Position
 
 instance Eq Position where
   (==) x = case x of

@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Core.Type.Syntax where
 
@@ -11,14 +13,23 @@ import Data.Bifree (Bifree, bibimap, liftShowsPrec2Bifree)
 import Data.Bifunctor (Bifunctor (..))
 import Data.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
+import Data.Hashable (Hashable)
+import Data.Hashable.Lifted (Hashable1)
 import Data.Position (Position)
+import GHC.Generics (Generic, Generic1)
+
+instance (Functor f, Hashable1 f) => Hashable1 (Free f)
+
+instance (Hashable a, Hashable (f (Free f a))) => Hashable (Free f a)
 
 ------------------------------------ KINDS -------------------------------------
 
 data SimpleKind
   = Data
   | SimpleKind :*: SimpleKind
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Hashable SimpleKind
 
 data ProperKind
   = Simple SimpleKind
@@ -27,7 +38,9 @@ data ProperKind
   | Row ProperKind
   | ProperKind :**: ProperKind
   | ProperKind :->: ProperKind
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Hashable ProperKind
 
 -------------------------------- MULTIPLICITIES --------------------------------
 
@@ -35,9 +48,13 @@ data MultF l a
   = MLit l
   | MJoin a a
   | MMeet a a
-  deriving (Foldable)
+  deriving (Foldable, Generic, Generic1)
   deriving (Functor, Eq1, Show1) via (Ap2 MultF l)
   deriving (Eq, Show) via (Ap2 MultF l a)
+
+instance (Hashable l, Hashable a) => Hashable (MultF l a)
+
+instance Hashable l => Hashable1 (MultF l)
 
 instance Bifunctor MultF where
   bimap f g = \case
@@ -69,7 +86,9 @@ data MultLit = MultLit
   { noWeakening :: Bool,
     noContraction :: Bool
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Hashable MultLit
 
 type MultTerm = Free (MultF MultLit)
 
@@ -111,8 +130,13 @@ data RowF e r
   = REmpty ProperKind
   | REntry EntryKey e
   | RJoin r r
+  deriving (Generic, Generic1)
   deriving (Functor, Eq1, Show1) via (Ap2 RowF e)
   deriving (Eq, Show) via (Ap2 RowF e r)
+
+instance Hashable e => Hashable1 (RowF e)
+
+instance (Hashable e, Hashable r) => Hashable (RowF e r)
 
 instance Bifunctor RowF where
   bimap f g = \case
@@ -144,14 +168,19 @@ type RowTerm t = Free (RowF t)
 
 ------------------------------------- DATA -------------------------------------
 
-data Connective = CAnd | CWith | COr deriving (Show, Eq)
+data Connective = CAnd | CWith | COr deriving (Eq, Show, Generic)
+
+instance Hashable Connective
 
 data DataF n a
   = PArrow a a
   | PForall ProperKind a
   | PSpread Connective (RowTerm a n)
+  deriving (Generic)
   deriving (Functor, Eq1, Show1) via (Ap2 DataF n)
   deriving (Eq, Show) via (Ap2 DataF n a)
+
+instance (Hashable n, Hashable a) => Hashable (DataF n a)
 
 instance Bifunctor DataF where
   bimap f g = \case
@@ -194,8 +223,13 @@ data TypeF n a = TLit
     tyPre :: a,
     tyMul :: MultTerm n
   }
+  deriving (Generic, Generic1)
   deriving (Functor, Eq1, Show1) via (Ap2 TypeF n)
   deriving (Eq, Show) via (Ap2 TypeF n a)
+
+instance Hashable n => Hashable1 (TypeF n)
+
+instance (Hashable n, Hashable a) => Hashable (TypeF n a)
 
 instance Bifunctor TypeF where
   bimap f g (TLit p q m) = TLit p (g q) (fmap f m)
@@ -231,8 +265,12 @@ data LambdaF a
   | LMul a
   | LFix SimpleKind a
   | LMap a a
-  deriving (Functor)
+  deriving (Functor, Generic, Generic1)
   deriving (Eq, Show) via (Ap LambdaF a)
+
+instance Hashable1 LambdaF
+
+instance Hashable a => Hashable (LambdaF a)
 
 instance Eq1 LambdaF where
   liftEq f l r = case (l, r) of
@@ -286,8 +324,10 @@ data TermF a
   | TData (DataTerm a a)
   | TRow (RowTerm a a)
   | TMul (MultTerm a)
-  deriving (Eq)
+  deriving (Eq, Generic)
   deriving (Show) via (Ap TermF a)
+
+instance Hashable a => Hashable (TermF a)
 
 instance Functor TermF where
   fmap f = \case

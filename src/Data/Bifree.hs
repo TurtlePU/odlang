@@ -50,6 +50,13 @@ rhoist ::
   Bifree g f' b a
 rhoist v = bihoist v id
 
+bifirst ::
+  (Bifunctor f, Bifunctor g, Functor (f b), Functor (g b)) =>
+  (a -> b) ->
+  Bifree (f a) (g a) c d ->
+  Bifree (f b) (g b) c d
+bifirst f = bihoist (first f) (first f)
+
 biunfold ::
   (Functor f, Functor g) =>
   (c -> Either a (f d)) ->

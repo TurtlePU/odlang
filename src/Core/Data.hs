@@ -57,13 +57,6 @@ type TypeTerm n a = Bifree (DataT n) (TypeT n) a a
 
 type DataTerm n a = Bifree (TypeT n) (DataT n) a a
 
-bifirst ::
-  (Bifunctor f, Bifunctor g, Functor (f b), Functor (g b)) =>
-  (a -> b) ->
-  Bifree (f a) (g a) c d ->
-  Bifree (f b) (g b) c d
-bifirst f = bihoist (first f) (first f)
-
 newtype TypeTerm' a = TTerm {unTT :: TypeTerm a a}
 
 newtype DataTerm' a = DTerm {unDT :: DataTerm a a}

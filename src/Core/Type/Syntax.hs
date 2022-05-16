@@ -5,9 +5,9 @@
 
 module Core.Type.Syntax where
 
-import Control.Monad.Free (Free (..), hoistFree, iter)
+import Control.Monad.Free (Free, hoistFree, iter)
 import Data.Aps (Ap (..), Ap2 (..))
-import Data.Bifree (Bifree)
+import Data.Bifree (Bifree, bibimap, liftShowsPrec2Bifree)
 import Data.Bifunctor (Bifunctor (..))
 import Data.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
@@ -277,6 +277,33 @@ instance Show1 LambdaF where
       app_const s t = appConst ia s i t
 
 type LambdaTerm = Free LambdaF
+
+--------------------------------- GENERIC TERM ---------------------------------
+
+data TermF a
+  = TLam (LambdaTerm a)
+  | TType (TypeTerm a a)
+  | TData (DataTerm a a)
+  | TRow (RowTerm a a)
+  | TMul (MultTerm a)
+  deriving (Eq)
+  deriving (Show) via (Ap TermF a)
+
+instance Functor TermF where
+  fmap f = \case
+    TLam t -> TLam (fmap f t)
+    TType t -> TType (bibimap f f t)
+    TData t -> TData (bibimap f f t)
+    TRow t -> TRow (bimapFree f f t)
+    TMul t -> TMul (fmap f t)
+
+instance Show1 TermF where
+  liftShowsPrec ia la i = \case
+    TLam t -> liftShowsPrec ia la i t
+    TType t -> liftShowsPrec2Bifree ia ia ia la ia la i t
+    TData t -> liftShowsPrec2Bifree ia ia ia la ia la i t
+    TRow t -> liftShowsPrec2Free ia ia la i t
+    TMul t -> liftShowsPrec ia la i t
 
 ---------------------------------- SHOW UTILS ----------------------------------
 

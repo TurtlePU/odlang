@@ -16,7 +16,8 @@ import Data.Reflection.Instances
 data Bifree g f b a
   = BPure a
   | BFree (f (Bifree f g a b))
-  deriving (Functor) via (Ap2 (Bifree g f) b)
+  deriving (Functor, Eq1, Show1) via (Ap2 (Bifree g f) b)
+  deriving (Eq, Show) via (Ap2 (Bifree g f) b a)
 
 biliftF' :: Functor g => g a -> Bifree f g a b
 biliftF' = BFree . fmap BPure

@@ -76,21 +76,6 @@ rhoist ::
   Bifree g f' b a
 rhoist v = bihoist v id
 
-bifirst ::
-  (Bifunctor f, Bifunctor g, Functor (f b), Functor (g b)) =>
-  (a -> b) ->
-  Bifree (f a) (g a) c d ->
-  Bifree (f b) (g b) c d
-bifirst f = bihoist (first f) (first f)
-
-bibimap ::
-  (Bifunctor f, Bifunctor g, Functor (f c), Functor (g c)) =>
-  (a -> c) ->
-  (b -> d) ->
-  Bifree (f a) (g a) b b ->
-  Bifree (f c) (g c) d d
-bibimap v w = bimap w w . bifirst v
-
 biunfold ::
   (Functor f, Functor g) =>
   (c -> Either a (f d)) ->
@@ -118,43 +103,11 @@ instance (Eq1 g, Eq1 f) => Eq2 (Bifree g f) where
     (BFree l, BFree g) -> liftEq (liftEq2 w v) l g
     _ -> False
 
-liftEq2Bifree ::
-  (Eq2 g, Eq2 f, Bifunctor g, Bifunctor f) =>
-  (a -> a -> Bool) ->
-  (t -> t -> Bool) ->
-  (b -> c -> Bool) ->
-  (d -> e -> Bool) ->
-  Bifree (g a) (f t) b d ->
-  Bifree (g a) (f t) c e ->
-  Bool
-liftEq2Bifree u s v w l r = reify (ReifiedEq u) $ \p ->
-  reify (ReifiedEq s) $ \q -> liftEq2 v w (dohoist q p l) (dohoist q p r)
-  where
-    dohoist p q = bihoist (ap2 p) (ap2 q)
-    ap2 p = Ap2 . first (mkReflected p)
-
 instance (Show1 g, Show1 f) => Show2 (Bifree g f) where
   liftShowsPrec2 ia la ib lb i = \case
     BPure x -> ib i x
     BFree w ->
       liftShowsPrec (liftShowsPrec2 ib lb ia la) (liftShowList2 ib lb ia la) i w
-
-liftShowsPrec2Bifree ::
-  (Show2 g, Show2 f, Bifunctor g, Bifunctor f) =>
-  (Int -> a -> ShowS) ->
-  (Int -> b -> ShowS) ->
-  (Int -> c -> ShowS) ->
-  ([c] -> ShowS) ->
-  (Int -> d -> ShowS) ->
-  ([d] -> ShowS) ->
-  Int ->
-  Bifree (g a) (f b) c d ->
-  ShowS
-liftShowsPrec2Bifree ia ib ic lc id ld i r = reify (ReifiedShow ia) $ \pa ->
-  reify (ReifiedShow ib) $ \pb ->
-    liftShowsPrec2 ic lc id ld i $ bihoist (ap2 pb) (ap2 pa) r
-  where
-    ap2 p = Ap2 . first (mkReflected p)
 
 instance (Functor g, Functor f) => Bifunctor (Bifree g f) where
   bimap v w (BPure x) = BPure (w x)

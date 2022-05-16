@@ -27,6 +27,7 @@ library
   exposed-modules:
       Control.Monad.Bifree
       Control.Monad.FreeBi
+      Control.Monad.Quad
       Core.Data
       Core.Kind
       Core.Multiplicity

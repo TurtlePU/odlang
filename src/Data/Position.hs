@@ -7,6 +7,9 @@ import Data.Result
 
 data Position
 
+instance Eq Position where
+  (==) x = case x of
+
 instance Show Position where
   show x = case x of
 

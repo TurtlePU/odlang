@@ -15,6 +15,7 @@ import Data.IndexedBag (IndexedBag)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Position (Position)
 import Data.Result (Result (..), mapCtx)
+import Data.Aps (Ap(Ap))
 
 data Connective = CAnd | CWith | COr deriving (Show, Eq)
 
@@ -94,7 +95,7 @@ type TyEqResult n a = Result (NonEmpty (TyEqError n)) [TyEqAssumption n a]
 
 checkTypeEQ :: (Eq n, Eq a) => TypeTerm n a -> TypeTerm n a -> TyEqResult n a
 checkTypeEQ l r = case (l, r) of
-  (BFree (TLit ql pl ml), BFree (TLit qr pr mr)) ->
+  (BFree (Ap (TLit ql pl ml)), BFree (Ap (TLit qr pr mr))) ->
     liftA2 (<>) (checkDataEQ pl pr) (fromMult $ checkMultEQ ml ml)
   (l, r) -> Ok [Left (l, r)]
   where
@@ -104,17 +105,17 @@ checkTypeEQ l r = case (l, r) of
 
 checkDataEQ :: (Eq n, Eq a) => DataTerm n a -> DataTerm n a -> TyEqResult n a
 checkDataEQ l r = case (l, r) of
-  (BFree (PArrow f t), BFree (PArrow f' t')) ->
+  (BFree (Ap (PArrow f t)), BFree (Ap (PArrow f' t'))) ->
     liftA2 (<>) (checkTypeEQ f f') (checkTypeEQ t t')
-  (BFree (PForall k t), BFree (PForall k' t')) ->
+  (BFree (Ap (PForall k t)), BFree (Ap (PForall k' t'))) ->
     if k == k'
       then checkTypeEQ t t'
       else Err $ pure $ EData (VForall k, VForall k')
-  (BFree (PSpread c r), BFree (PSpread c' r')) ->
+  (BFree (Ap (PSpread c r)), BFree (Ap (PSpread c' r'))) ->
     if c == c'
       then fromRow $ checkRowEQ r r'
       else Err $ pure $ EData (VSpread c, VSpread c')
-  (BFree t, BFree t') -> Err $ pure $ EData (getOption t, getOption t')
+  (BFree (Ap t), BFree (Ap t')) -> Err $ pure $ EData (getOption t, getOption t')
   (t, t') -> Ok [Right (t, t')]
   where
     fromRow = \case

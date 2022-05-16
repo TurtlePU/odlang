@@ -25,6 +25,8 @@ source-repository head
 
 library
   exposed-modules:
+      Control.Monad.Bifree
+      Control.Monad.FreeBi
       Core.Data
       Core.Kind
       Core.Multiplicity
@@ -33,9 +35,7 @@ library
       Core.Type.Syntax
       Core.TypeLevel
       Data.Aps
-      Data.Bifree
       Data.EqBag
-      Data.FreeBi
       Data.HashMultiMap
       Data.IndexedBag
       Data.Position

@@ -7,12 +7,12 @@
 
 module Core.Type.Syntax where
 
+import Control.Monad.Bifree (Bifree, bibimap, liftShowsPrec2Bifree)
 import Control.Monad.Free (Free, hoistFree, iter)
+import Control.Monad.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
 import Data.Aps (Ap (..), Ap2 (..))
-import Data.Bifree (Bifree, bibimap, liftShowsPrec2Bifree)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Fix (Fix)
-import Data.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
 import Data.Hashable (Hashable)
 import Data.Hashable.Lifted (Hashable1)

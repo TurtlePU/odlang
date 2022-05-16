@@ -4,11 +4,11 @@
 module Core.Data where
 
 import Control.Applicative (Applicative (liftA2))
+import Control.Monad.Bifree
 import Control.Monad.Free (hoistFree)
 import Core.Kind
 import Core.Multiplicity
 import Core.Row
-import Data.Bifree
 import Data.Bifunctor (Bifunctor (..))
 import Data.Functor (($>))
 import Data.IndexedBag (IndexedBag)

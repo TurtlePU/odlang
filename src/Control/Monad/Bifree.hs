@@ -4,7 +4,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Data.Bifree where
+module Control.Monad.Bifree where
 
 import Control.Monad (ap)
 import Data.Aps (Ap2 (..))

@@ -1,11 +1,11 @@
-module Data.FreeBi where
+module Control.Monad.FreeBi where
 
 import Control.Monad.Free (Free (..), hoistFree)
 import Data.Aps (Ap2 (..))
-import Data.Bifunctor (Bifunctor (first))
+import Data.Bifunctor (Bifunctor (..))
 import Data.Functor.Classes (Eq2 (..), Show1 (..), Show2)
 import Data.Reflection (reify)
-import Data.Reflection.Instances (reflectShow, ReifiedShow (..))
+import Data.Reflection.Instances (ReifiedShow (..), reflectShow)
 
 firstFree ::
   (Bifunctor f, Functor (f c)) => (a -> c) -> Free (f a) b -> Free (f c) b

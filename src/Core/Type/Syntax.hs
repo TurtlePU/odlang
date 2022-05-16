@@ -6,12 +6,12 @@
 
 module Core.Type.Syntax where
 
-import Control.Monad.Bifree (Bifree, bibimap, liftShowsPrec2Bifree)
-import Control.Monad.Free (Free, hoistFree, iter)
+import Control.Monad.Free (Free, iter)
 import Control.Monad.FreeBi (FreeBi)
+import Control.Monad.Quad (Quad)
 import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifunctor (Bifunctor (..))
-import Data.Bifunctor.Join (Join)
+import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
 import Data.Hashable (Hashable (..))
@@ -222,7 +222,7 @@ instance Show2 DataF where
         CWith -> ("[", "]")
         COr -> ("(|", "|)")
 
-type DataTerm n a = Bifree (TypeF n) (DataF n) a a
+type DataTerm = Quad TypeF DataF
 
 ------------------------------------- TYPE -------------------------------------
 
@@ -259,7 +259,7 @@ instance Show2 TypeF where
       app_prec = 10
       mod_prec = 4
 
-type TypeTerm n a = Bifree (DataF n) (TypeF n) a a
+type TypeTerm = Quad DataF TypeF
 
 ------------------------------------ LAMBDA ------------------------------------
 
@@ -335,29 +335,32 @@ type LambdaTerm = Free LambdaF
 
 data TermF a
   = TLam (LambdaTerm a)
-  | TType (TypeTerm a a)
-  | TData (DataTerm a a)
+  | TType (Join TypeTerm a)
+  | TData (Join DataTerm a)
   | TRow (Join RowTerm a)
   | TMul (MultTerm a)
-  deriving (Eq, Generic)
-  deriving (Show, Hashable) via (Ap TermF a)
+  deriving (Functor, Generic, Generic1)
+  deriving (Show, Eq, Hashable) via (Ap TermF a)
 
-instance Hashable1 TermF where
-  liftHashWithSalt = error "TODO"
+instance Hashable2 f => Hashable1 (Join f) where
+  liftHashWithSalt ha s (Join x) = liftHashWithSalt2 ha ha s x
 
-instance Functor TermF where
-  fmap f = \case
-    TLam t -> TLam (fmap f t)
-    TType t -> TType (bibimap f f t)
-    TData t -> TData (bibimap f f t)
-    TRow t -> TRow (fmap f t)
-    TMul t -> TMul (fmap f t)
+instance Hashable1 TermF
+
+instance Eq1 TermF where
+  liftEq f l r = case (l, r) of
+    (TLam l, TLam r) -> liftEq f l r
+    (TType l, TType r) -> liftEq f l r
+    (TData l, TData r) -> liftEq f l r
+    (TRow l, TRow r) -> liftEq f l r
+    (TMul l, TMul r) -> liftEq f l r
+    _ -> False
 
 instance Show1 TermF where
   liftShowsPrec ia la i = \case
     TLam t -> liftShowsPrec ia la i t
-    TType t -> liftShowsPrec2Bifree ia ia ia la ia la i t
-    TData t -> liftShowsPrec2Bifree ia ia ia la ia la i t
+    TType t -> liftShowsPrec ia la i t
+    TData t -> liftShowsPrec ia la i t
     TRow t -> liftShowsPrec ia la i t
     TMul t -> liftShowsPrec ia la i t
 

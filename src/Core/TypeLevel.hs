@@ -58,8 +58,8 @@ synthesizeKind' = \case
   KLam (LPair l r) -> liftA2 (:**:) l r
   KLam (LFst t) -> fmap fst $ t >>= pullPair
   KLam (LSnd t) -> fmap snd $ t >>= pullPair
-  KLam (LPre t) -> intoCheck (Simple Type) t $> Simple Pretype
-  KLam (LMul t) -> intoCheck (Simple Type) t $> Mult
+  KLam (LPre t) -> intoCheck Type t $> Simple Pretype
+  KLam (LMul t) -> intoCheck Type t $> Mult
   KLam (LFix k t) ->
     mapCtx (first (Simple k :)) (intoCheck (Simple k) t) $> Simple k
   KLam (LMap f r) ->

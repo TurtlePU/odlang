@@ -9,12 +9,12 @@ import Data.Result (CtxResult (..), Result (..))
 
 data SimpleKind
   = Pretype
-  | Type
   | SimpleKind :*: SimpleKind
   deriving (Show, Eq)
 
 data ProperKind
   = Simple SimpleKind
+  | Type
   | Mult
   | Row ProperKind
   | ProperKind :**: ProperKind

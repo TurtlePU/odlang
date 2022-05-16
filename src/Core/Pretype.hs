@@ -4,6 +4,7 @@
 module Core.Pretype where
 
 import Control.Applicative (Applicative (liftA2))
+import Control.Monad.Free (hoistFree)
 import Core.Kind
 import Core.Multiplicity
 import Core.Row
@@ -14,7 +15,6 @@ import Data.IndexedBag (IndexedBag)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Position (Position)
 import Data.Result (Result (..), mapCtx)
-import Control.Monad.Free (hoistFree)
 
 data Connective = CAnd | CWith | COr deriving (Show, Eq)
 
@@ -42,6 +42,17 @@ instance Bifunctor PreTypeT where
 instance Functor (PreTypeT n) where
   fmap = second
 
+data PreTypeOption
+  = OArrow
+  | OForall ProperKind
+  | OSpread Connective
+
+getOption :: PreTypeT n a -> PreTypeOption
+getOption = \case
+  PArrow _ _ -> OArrow
+  PForall k _ -> OForall k
+  PSpread c _ -> OSpread c
+
 type TypeTerm n a = Bifree (PreTypeT n) (TypeT n) a a
 
 type PreType n a = Bifree (TypeT n) (PreTypeT n) a a
@@ -66,19 +77,19 @@ instance Functor PreType' where
 checkTypeKind' ::
   TypeT (PosResult ProperKind) (PosResult ProperKind) -> PosResult ProperKind
 checkTypeKind' (TLit _ p m) =
-  Simple Type <$ intoCheck (Simple Pretype) p <* checkMultKind m
+  Type <$ intoCheck (Simple Pretype) p <* checkMultKind m
 
 checkPreTypeKind' ::
   PreTypeT (PosResult ProperKind) (PosResult ProperKind) -> PosResult ProperKind
 checkPreTypeKind' =
   fmap (const $ Simple Pretype) . \case
-    PArrow f t -> intoCheck (Simple Type) f *> intoCheck (Simple Type) t
-    PForall k t -> intoCheck (Simple Type) $ mapCtx (first (k :)) t
+    PArrow f t -> intoCheck Type f *> intoCheck Type t
+    PForall k t -> intoCheck Type $ mapCtx (first (k :)) t
     PSpread c r ->
-      intoCheck (Row $ Simple Type) $
+      intoCheck (Row Type) $
         synthesizeRowKind $
           MkRowTerm' $
-            hoistFree (first $ intoAssert $ Simple Type) r
+            hoistFree (first $ intoAssert Type) r
 
 checkTypeKind :: TypeTerm' (PosResult ProperKind) -> PosResult ProperKind
 checkTypeKind = biiter checkTypeKind' checkPreTypeKind' . unTT
@@ -90,11 +101,32 @@ type TyEqResult n a = Result (NonEmpty (TyEqError n)) [TyEqAssumption n a]
 
 checkTypeEQ :: (Eq n, Eq a) => TypeTerm n a -> TypeTerm n a -> TyEqResult n a
 checkTypeEQ l r = case (l, r) of
-  (BFree (TLit ql pl ml), BFree (TLit qr pr mr)) -> _
+  (BFree (TLit ql pl ml), BFree (TLit qr pr mr)) ->
+    liftA2 (<>) (checkPreTypeEQ pl pr) (fromMult $ checkMultEQ ml ml)
   (l, r) -> Ok [Left (l, r)]
+  where
+    fromMult = \case
+      Just errs -> Err $ pure $ EMult errs
+      Nothing -> Ok []
 
 checkPreTypeEQ :: (Eq n, Eq a) => PreType n a -> PreType n a -> TyEqResult n a
-checkPreTypeEQ l r = _
+checkPreTypeEQ l r = case (l, r) of
+  (BFree (PArrow f t), BFree (PArrow f' t')) ->
+    liftA2 (<>) (checkTypeEQ f f') (checkTypeEQ t t')
+  (BFree (PForall k t), BFree (PForall k' t')) ->
+    if k == k'
+      then checkTypeEQ t t'
+      else Err $ pure $ EPre (OForall k, OForall k')
+  (BFree (PSpread c r), BFree (PSpread c' r')) ->
+    if c == c'
+      then fromRow $ checkRowEQ r r'
+      else Err $ pure $ EPre (OSpread c, OSpread c')
+  (BFree t, BFree t') -> Err $ pure $ EPre (getOption t, getOption t')
+  (t, t') -> Ok [Right (t, t')]
+  where
+    fromRow = \case
+      [] -> Ok []
+      (x : xs) -> Err $ pure $ ESpread (x :| xs)
 
 data TyEqError n
   = EPre (Assumption PreTypeOption)
@@ -105,8 +137,3 @@ type TyEqAssumption n a =
   Either (Assumption (TypeTerm n a)) (Assumption (PreType n a))
 
 type Assumption a = (a, a)
-
-data PreTypeOption
-  = OArrow
-  | OForall ProperKind
-  | OSpread Connective

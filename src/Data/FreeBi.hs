@@ -4,7 +4,8 @@ import Control.Monad.Free (Free (..), hoistFree)
 import Data.Aps (Ap2 (..))
 import Data.Bifunctor (Bifunctor (first))
 import Data.Functor.Classes (Eq2 (..), Show1 (..), Show2)
-import Data.Reflection.Show (reflectShow, withReifiedShow)
+import Data.Reflection (reify)
+import Data.Reflection.Instances (reflectShow, ReifiedShow (..))
 
 firstFree ::
   (Bifunctor f, Functor (f c)) => (a -> c) -> Free (f a) b -> Free (f c) b
@@ -38,5 +39,5 @@ liftShowsPrec2Free ::
   Int ->
   Free (f a) b ->
   ShowS
-liftShowsPrec2Free ia ib lb i x = withReifiedShow ia $ \p ->
+liftShowsPrec2Free ia ib lb i x = reify (ReifiedShow ia) $ \p ->
   liftShowsPrec ib lb i $ hoistFree (Ap2 . first (reflectShow p)) x

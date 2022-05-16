@@ -39,7 +39,7 @@ library
       Data.HashMultiMap
       Data.IndexedBag
       Data.Position
-      Data.Reflection.Show
+      Data.Reflection.Instances
       Data.Result
       Lib
       Parser

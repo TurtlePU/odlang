@@ -7,6 +7,7 @@ import Control.Monad (ap)
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bitraversable (Bitraversable (..))
+import Data.Functor.Classes (Eq1 (..), Eq2 (..))
 
 data Bifree g f b a
   = BPure a
@@ -69,6 +70,12 @@ biunfoldM v w s =
   v s >>= \case
     Left x -> pure $ BPure x
     Right xs -> BFree <$> traverse (biunfoldM w v) xs
+
+instance (Eq1 g, Eq1 f) => Eq2 (Bifree g f) where
+  liftEq2 v w l r = case (l, r) of
+    (BPure x, BPure y) -> w x y
+    (BFree l, BFree g) -> liftEq (liftEq2 w v) l g
+    _ -> False
 
 instance (Functor g, Functor f) => Bifunctor (Bifree g f) where
   bimap v w (BPure x) = BPure (w x)

@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Core.Type.Syntax where
 
@@ -15,9 +14,11 @@ import Data.Bifunctor (Bifunctor (..))
 import Data.Bifunctor.Join (Join)
 import Data.Fix (Fix)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
-import Data.Hashable (Hashable)
+import Data.Hashable (Hashable (..))
 import Data.Hashable.Lifted (Hashable1 (..), Hashable2 (..))
 import Data.Position (Position)
+import Data.Reflection (reify)
+import Data.Reflection.Instances
 import GHC.Generics (Generic, Generic1)
 
 ------------------------------------ KINDS -------------------------------------
@@ -47,10 +48,14 @@ data MultF l a
   | MJoin a a
   | MMeet a a
   deriving (Foldable, Generic, Generic1)
-  deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 MultF l)
+  deriving (Functor, Eq1, Show1) via (Ap2 MultF l)
   deriving (Eq, Show, Hashable) via (Ap2 MultF l a)
 
-instance Hashable2 MultF
+instance Hashable l => Hashable1 (MultF l)
+
+instance Hashable2 MultF where
+  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \p ->
+    liftHashWithSalt hb s $ first (mkReflected p) x
 
 instance Bifunctor MultF where
   bimap f g = \case
@@ -86,7 +91,7 @@ data MultLit = MultLit
 
 instance Hashable MultLit
 
-type MultTerm = Free (MultF MultLit)
+type MultTerm = FreeBi MultF MultLit
 
 --------------------------------- BOOLEAN CLASS --------------------------------
 
@@ -127,10 +132,14 @@ data RowF e r
   | REntry EntryKey e
   | RJoin r r
   deriving (Generic, Generic1)
-  deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 RowF e)
+  deriving (Functor, Eq1, Show1) via (Ap2 RowF e)
   deriving (Eq, Show, Hashable) via (Ap2 RowF e r)
 
-instance Hashable2 RowF
+instance Hashable e => Hashable1 (RowF e)
+
+instance Hashable2 RowF where
+  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \p ->
+    liftHashWithSalt hb s $ first (mkReflected p) x
 
 instance Bifunctor RowF where
   bimap f g = \case
@@ -172,9 +181,14 @@ data DataF n a
   | PSpread Connective (RowTerm a n)
   deriving (Generic)
   deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 DataF n)
-  deriving (Eq, Show, Hashable) via (Ap2 DataF n a)
+  deriving (Eq, Show) via (Ap2 DataF n a)
 
-instance Hashable2 DataF
+instance (Hashable n, Hashable a) => Hashable (DataF n a)
+
+instance Hashable2 DataF where
+  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \pa ->
+    reify (ReifiedHashable hb) $ \pb ->
+      hashWithSalt s $ bimap (mkReflected pa) (mkReflected pb) x
 
 instance Bifunctor DataF where
   bimap f g = \case
@@ -218,10 +232,14 @@ data TypeF n a = TLit
     tyMul :: MultTerm n
   }
   deriving (Generic, Generic1)
-  deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 TypeF n)
+  deriving (Functor, Eq1, Show1) via (Ap2 TypeF n)
   deriving (Eq, Show, Hashable) via (Ap2 TypeF n a)
 
-instance Hashable2 TypeF
+instance Hashable n => Hashable1 (TypeF n)
+
+instance Hashable2 TypeF where
+  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \p ->
+    liftHashWithSalt hb s $ first (mkReflected p) x
 
 instance Bifunctor TypeF where
   bimap f g (TLit p q m) = TLit p (g q) (fmap f m)

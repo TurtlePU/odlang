@@ -12,6 +12,7 @@ import Control.Monad.Free (Free, hoistFree, iter)
 import Control.Monad.FreeBi (FreeBi)
 import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifunctor (Bifunctor (..))
+import Data.Bifunctor.Join (Join)
 import Data.Fix (Fix)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
 import Data.Hashable (Hashable)
@@ -49,7 +50,7 @@ data MultF l a
   deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 MultF l)
   deriving (Eq, Show, Hashable) via (Ap2 MultF l a)
 
-instance Hashable2 MultF where
+instance Hashable2 MultF
 
 instance Bifunctor MultF where
   bimap f g = \case
@@ -129,7 +130,7 @@ data RowF e r
   deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 RowF e)
   deriving (Eq, Show, Hashable) via (Ap2 RowF e r)
 
-instance Hashable2 RowF where
+instance Hashable2 RowF
 
 instance Bifunctor RowF where
   bimap f g = \case
@@ -173,7 +174,7 @@ data DataF n a
   deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 DataF n)
   deriving (Eq, Show, Hashable) via (Ap2 DataF n a)
 
-instance Hashable2 DataF where
+instance Hashable2 DataF
 
 instance Bifunctor DataF where
   bimap f g = \case
@@ -220,7 +221,7 @@ data TypeF n a = TLit
   deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 TypeF n)
   deriving (Eq, Show, Hashable) via (Ap2 TypeF n a)
 
-instance Hashable2 TypeF where
+instance Hashable2 TypeF
 
 instance Bifunctor TypeF where
   bimap f g (TLit p q m) = TLit p (g q) (fmap f m)
@@ -318,7 +319,7 @@ data TermF a
   = TLam (LambdaTerm a)
   | TType (TypeTerm a a)
   | TData (DataTerm a a)
-  | TRow (RowTerm a a)
+  | TRow (Join RowTerm a)
   | TMul (MultTerm a)
   deriving (Eq, Generic)
   deriving (Show, Hashable) via (Ap TermF a)
@@ -331,7 +332,7 @@ instance Functor TermF where
     TLam t -> TLam (fmap f t)
     TType t -> TType (bibimap f f t)
     TData t -> TData (bibimap f f t)
-    TRow t -> TRow (bimap f f t)
+    TRow t -> TRow (fmap f t)
     TMul t -> TMul (fmap f t)
 
 instance Show1 TermF where
@@ -339,7 +340,7 @@ instance Show1 TermF where
     TLam t -> liftShowsPrec ia la i t
     TType t -> liftShowsPrec2Bifree ia ia ia la ia la i t
     TData t -> liftShowsPrec2Bifree ia ia ia la ia la i t
-    TRow t -> liftShowsPrec2 ia la ia la i t
+    TRow t -> liftShowsPrec ia la i t
     TMul t -> liftShowsPrec ia la i t
 
 type Term = Fix TermF

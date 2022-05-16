@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Core.Pretype where
+module Core.Data where
 
 import Control.Applicative (Applicative (liftA2))
 import Control.Monad.Free (hoistFree)
@@ -25,7 +25,7 @@ data TypeT n a = TLit
   }
   deriving (Functor)
 
-data PreTypeT n a
+data DataT n a
   = PArrow a a
   | PForall ProperKind a
   | PSpread Connective (RowTerm a n)
@@ -33,29 +33,29 @@ data PreTypeT n a
 instance Bifunctor TypeT where
   bimap f g (TLit q p m) = TLit q (g p) (fmap f m)
 
-instance Bifunctor PreTypeT where
+instance Bifunctor DataT where
   bimap f g = \case
     PArrow d c -> PArrow (g d) (g c)
     PForall k t -> PForall k (g t)
     PSpread c r -> PSpread c (bimapRow g f r)
 
-instance Functor (PreTypeT n) where
+instance Functor (DataT n) where
   fmap = second
 
-data PreTypeOption
-  = OArrow
-  | OForall ProperKind
-  | OSpread Connective
+data DataVariety
+  = VArrow
+  | VForall ProperKind
+  | VSpread Connective
 
-getOption :: PreTypeT n a -> PreTypeOption
+getOption :: DataT n a -> DataVariety
 getOption = \case
-  PArrow _ _ -> OArrow
-  PForall k _ -> OForall k
-  PSpread c _ -> OSpread c
+  PArrow _ _ -> VArrow
+  PForall k _ -> VForall k
+  PSpread c _ -> VSpread c
 
-type TypeTerm n a = Bifree (PreTypeT n) (TypeT n) a a
+type TypeTerm n a = Bifree (DataT n) (TypeT n) a a
 
-type PreType n a = Bifree (TypeT n) (PreTypeT n) a a
+type DataTerm n a = Bifree (TypeT n) (DataT n) a a
 
 bifirst ::
   (Bifunctor f, Bifunctor g, Functor (f b), Functor (g b)) =>
@@ -66,23 +66,23 @@ bifirst f = bihoist (first f) (first f)
 
 newtype TypeTerm' a = TTerm {unTT :: TypeTerm a a}
 
-newtype PreType' a = PTerm {unPT :: PreType a a}
+newtype DataTerm' a = DTerm {unDT :: DataTerm a a}
 
 instance Functor TypeTerm' where
   fmap f = TTerm . bifirst f . bimap f f . unTT
 
-instance Functor PreType' where
-  fmap f = PTerm . bifirst f . bimap f f . unPT
+instance Functor DataTerm' where
+  fmap f = DTerm . bifirst f . bimap f f . unDT
 
 checkTypeKind' ::
   TypeT (PosResult ProperKind) (PosResult ProperKind) -> PosResult ProperKind
 checkTypeKind' (TLit _ p m) =
-  Type <$ intoCheck (Simple Pretype) p <* checkMultKind m
+  Type <$ intoCheck (Simple Data) p <* checkMultKind m
 
-checkPreTypeKind' ::
-  PreTypeT (PosResult ProperKind) (PosResult ProperKind) -> PosResult ProperKind
-checkPreTypeKind' =
-  fmap (const $ Simple Pretype) . \case
+checkDataKind' ::
+  DataT (PosResult ProperKind) (PosResult ProperKind) -> PosResult ProperKind
+checkDataKind' =
+  fmap (const $ Simple Data) . \case
     PArrow f t -> intoCheck Type f *> intoCheck Type t
     PForall k t -> intoCheck Type $ mapCtx (first (k :)) t
     PSpread c r ->
@@ -92,36 +92,36 @@ checkPreTypeKind' =
             hoistFree (first $ intoAssert Type) r
 
 checkTypeKind :: TypeTerm' (PosResult ProperKind) -> PosResult ProperKind
-checkTypeKind = biiter checkTypeKind' checkPreTypeKind' . unTT
+checkTypeKind = biiter checkTypeKind' checkDataKind' . unTT
 
-checkPreTypeKind :: PreType' (PosResult ProperKind) -> PosResult ProperKind
-checkPreTypeKind = biiter checkPreTypeKind' checkTypeKind' . unPT
+checkDataKind :: DataTerm' (PosResult ProperKind) -> PosResult ProperKind
+checkDataKind = biiter checkDataKind' checkTypeKind' . unDT
 
 type TyEqResult n a = Result (NonEmpty (TyEqError n)) [TyEqAssumption n a]
 
 checkTypeEQ :: (Eq n, Eq a) => TypeTerm n a -> TypeTerm n a -> TyEqResult n a
 checkTypeEQ l r = case (l, r) of
   (BFree (TLit ql pl ml), BFree (TLit qr pr mr)) ->
-    liftA2 (<>) (checkPreTypeEQ pl pr) (fromMult $ checkMultEQ ml ml)
+    liftA2 (<>) (checkDataEQ pl pr) (fromMult $ checkMultEQ ml ml)
   (l, r) -> Ok [Left (l, r)]
   where
     fromMult = \case
       Just errs -> Err $ pure $ EMult errs
       Nothing -> Ok []
 
-checkPreTypeEQ :: (Eq n, Eq a) => PreType n a -> PreType n a -> TyEqResult n a
-checkPreTypeEQ l r = case (l, r) of
+checkDataEQ :: (Eq n, Eq a) => DataTerm n a -> DataTerm n a -> TyEqResult n a
+checkDataEQ l r = case (l, r) of
   (BFree (PArrow f t), BFree (PArrow f' t')) ->
     liftA2 (<>) (checkTypeEQ f f') (checkTypeEQ t t')
   (BFree (PForall k t), BFree (PForall k' t')) ->
     if k == k'
       then checkTypeEQ t t'
-      else Err $ pure $ EPre (OForall k, OForall k')
+      else Err $ pure $ EData (VForall k, VForall k')
   (BFree (PSpread c r), BFree (PSpread c' r')) ->
     if c == c'
       then fromRow $ checkRowEQ r r'
-      else Err $ pure $ EPre (OSpread c, OSpread c')
-  (BFree t, BFree t') -> Err $ pure $ EPre (getOption t, getOption t')
+      else Err $ pure $ EData (VSpread c, VSpread c')
+  (BFree t, BFree t') -> Err $ pure $ EData (getOption t, getOption t')
   (t, t') -> Ok [Right (t, t')]
   where
     fromRow = \case
@@ -129,11 +129,11 @@ checkPreTypeEQ l r = case (l, r) of
       (x : xs) -> Err $ pure $ ESpread (x :| xs)
 
 data TyEqError n
-  = EPre (Assumption PreTypeOption)
+  = EData (Assumption DataVariety)
   | ESpread (NonEmpty RowEqError)
   | EMult (IndexedBag n MultLit)
 
 type TyEqAssumption n a =
-  Either (Assumption (TypeTerm n a)) (Assumption (PreType n a))
+  Either (Assumption (TypeTerm n a)) (Assumption (DataTerm n a))
 
 type Assumption a = (a, a)

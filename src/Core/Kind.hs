@@ -8,7 +8,7 @@ import Data.Position (Position, Positioned (..), getPosition)
 import Data.Result (CtxResult (..), Result (..))
 
 data SimpleKind
-  = Pretype
+  = Data
   | SimpleKind :*: SimpleKind
   deriving (Show, Eq)
 

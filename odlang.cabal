@@ -25,9 +25,9 @@ source-repository head
 
 library
   exposed-modules:
+      Core.Data
       Core.Kind
       Core.Multiplicity
-      Core.Pretype
       Core.Row
       Core.Term
       Core.TypeLevel

@@ -6,9 +6,9 @@ module Core.TypeLevel where
 import Control.Applicative (Applicative (liftA2))
 import Control.Monad (forM_, (>=>))
 import Control.Monad.Free (Free (Free))
+import Core.Data
 import Core.Kind
 import Core.Multiplicity
-import Core.Pretype
 import Core.Row
 import Data.Bifunctor (Bifunctor (first, second))
 import Data.Functor (($>))
@@ -35,7 +35,7 @@ data TLTerm t
   | KMult (MultTerm t)
   | KRow (RowTerm' t)
   | KType (TypeTerm' t)
-  | KPretype (PreType' t)
+  | KData (DataTerm' t)
   deriving (Functor)
 
 shiftTLTerm :: Positioned TLTerm -> Int -> Positioned TLTerm
@@ -58,7 +58,7 @@ synthesizeKind' = \case
   KLam (LPair l r) -> liftA2 (:**:) l r
   KLam (LFst t) -> fmap fst $ t >>= pullPair
   KLam (LSnd t) -> fmap snd $ t >>= pullPair
-  KLam (LPre t) -> intoCheck Type t $> Simple Pretype
+  KLam (LPre t) -> intoCheck Type t $> Simple Data
   KLam (LMul t) -> intoCheck Type t $> Mult
   KLam (LFix k t) ->
     mapCtx (first (Simple k :)) (intoCheck (Simple k) t) $> Simple k
@@ -67,7 +67,7 @@ synthesizeKind' = \case
   KMult m -> checkMultKind m
   KRow r -> synthesizeRowKind r
   KType t -> checkTypeKind t
-  KPretype p -> checkPreTypeKind p
+  KData p -> checkDataKind p
 
 type Mult = Positioned TLTerm
 

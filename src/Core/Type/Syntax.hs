@@ -5,13 +5,13 @@
 module Core.Type.Syntax where
 
 import Control.Monad.Free (Free (..), hoistFree, iter)
-import Data.Ap2
+import Data.Ap2 (Ap2 (..))
 import Data.Bifree (Bifree)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
 import Data.Position (Position)
-import Data.Reflection (reify)
 import Data.Reflection.Show (withReifiedShow, reflectShow)
+import Data.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
 
 ------------------------------------ KINDS -------------------------------------
 
@@ -144,26 +144,6 @@ instance Show2 RowT where
 
 type RowTerm t = Free (RowT t)
 
-bimapRow :: (a -> c) -> (b -> d) -> RowTerm a b -> RowTerm c d
-bimapRow f g = hoistFree (first f) . fmap g
-
-rowEq2 ::
-  (a -> c -> Bool) -> (b -> d -> Bool) -> RowTerm a b -> RowTerm c d -> Bool
-rowEq2 f g l r = case (l, r) of
-  (Pure x, Pure y) -> g x y
-  (Free l', Free r') -> liftEq2 f (rowEq2 f g) l' r'
-  _ -> False
-
-rowPrec2 ::
-  (Int -> a -> ShowS) ->
-  (Int -> b -> ShowS) ->
-  ([b] -> ShowS) ->
-  Int ->
-  RowTerm a b ->
-  ShowS
-rowPrec2 ia ib lb i r = withReifiedShow ia $ \p ->
-  liftShowsPrec ib lb i $ hoistFree (first $ reflectShow p) r
-
 ------------------------------------- DATA -------------------------------------
 
 data Connective = CAnd | CWith | COr deriving (Show, Eq)
@@ -188,13 +168,13 @@ instance Bifunctor DataT where
   bimap f g = \case
     PArrow d c -> PArrow (g d) (g c)
     PForall k t -> PForall k (g t)
-    PSpread c r -> PSpread c (bimapRow g f r)
+    PSpread c r -> PSpread c (bimapFree g f r)
 
 instance Eq2 DataT where
   liftEq2 f g l r = case (l, r) of
     (PArrow c d, PArrow c' d') -> g c c' && g d d'
     (PForall k t, PForall k' t') -> k == k' && g t t'
-    (PSpread c r, PSpread c' r') -> c == c' && rowEq2 g f r r'
+    (PSpread c r, PSpread c' r') -> c == c' && liftEq2Free g f r r'
     _ -> False
 
 instance Show2 DataT where
@@ -208,7 +188,7 @@ instance Show2 DataT where
           . showsPrec (arr_prec + 1) k
           . showString ". "
           . ib (arr_prec + 1) t
-    PSpread c r -> showConnective c $ rowPrec2 ib ia la i r
+    PSpread c r -> showConnective c $ liftShowsPrec2Free ib ia la i r
     where
       arr_prec = 6
 

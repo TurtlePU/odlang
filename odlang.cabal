@@ -35,6 +35,7 @@ library
       Data.Ap2
       Data.Bifree
       Data.EqBag
+      Data.FreeBi
       Data.HashMultiMap
       Data.IndexedBag
       Data.Position

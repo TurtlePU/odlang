@@ -16,7 +16,7 @@ import Data.Reflection.Instances
 data Bifree g f b a
   = BPure a
   | BFree (f (Bifree f g a b))
-  deriving (Functor, Eq1, Show1) via (Ap2 (Bifree g f) b)
+  deriving (Functor, Foldable, Eq1, Show1) via (Ap2 (Bifree g f) b)
   deriving (Eq, Show) via (Ap2 (Bifree g f) b a)
 
 biliftF' :: Functor g => g a -> Bifree f g a b
@@ -160,23 +160,9 @@ instance (Foldable g, Foldable f) => Bifoldable (Bifree g f) where
   bifoldMap v w (BPure x) = w x
   bifoldMap v w (BFree fx) = foldMap (bifoldMap w v) fx
 
-instance (Foldable g, Foldable f) => Foldable (Bifree g f b) where
-  foldMap h = bifoldMap (const mempty) h
-
-lfoldMap ::
-  (Foldable g, Foldable f, Monoid m) => (b -> m) -> Bifree g f b a -> m
-lfoldMap h = bifoldMap h (const mempty)
-
 instance (Traversable g, Traversable h) => Bitraversable (Bifree g h) where
   bitraverse v w (BPure x) = pure <$> w x
   bitraverse v w (BFree fx) = BFree <$> sequenceA (bitraverse w v <$> fx)
 
 instance (Traversable g, Traversable h) => Traversable (Bifree g h b) where
-  traverse v = bitraverse pure v
-
-ltraverse ::
-  (Applicative f, Traversable g, Traversable h) =>
-  (a -> f b) ->
-  Bifree g h a c ->
-  f (Bifree g h b c)
-ltraverse v = bitraverse v pure
+  traverse = bitraverse pure

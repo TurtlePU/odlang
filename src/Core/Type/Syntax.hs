@@ -11,6 +11,7 @@ import Control.Monad.Free (Free, hoistFree, iter)
 import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifree (Bifree, bibimap, liftShowsPrec2Bifree)
 import Data.Bifunctor (Bifunctor (..))
+import Data.Fix (Fix)
 import Data.FreeBi (bimapFree, liftEq2Free, liftShowsPrec2Free)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
 import Data.Hashable (Hashable)
@@ -351,6 +352,8 @@ instance Show1 TermF where
     TData t -> liftShowsPrec2Bifree ia ia ia la ia la i t
     TRow t -> liftShowsPrec2Free ia ia la i t
     TMul t -> liftShowsPrec ia la i t
+
+type Term = Fix TermF
 
 ---------------------------------- SHOW UTILS ----------------------------------
 

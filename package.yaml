@@ -27,6 +27,7 @@ dependencies:
 - hashable
 - free
 - reflection
+- data-fix
 
 library:
   source-dirs: src

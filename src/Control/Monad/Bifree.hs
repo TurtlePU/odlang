@@ -2,45 +2,56 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Control.Monad.Bifree where
 
 import Control.Monad (ap)
-import Data.Aps (Ap2 (..))
+import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bitraversable (Bitraversable (..))
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
-import Data.Hashable (Hashable)
+import Data.Hashable (Hashable (hashWithSalt))
+import Data.Hashable.Lifted (Hashable1, Hashable2 (..))
 import Data.Reflection (reify)
 import Data.Reflection.Instances
 import GHC.Generics (Generic, Generic1)
 
 data Bifree g f b a
   = BPure a
-  | BFree (f (Bifree f g a b))
+  | BFree (Ap f (Bifree f g a b))
   deriving (Generic)
-  deriving (Functor, Foldable, Eq1, Show1) via (Ap2 (Bifree g f) b)
+  deriving (Functor, Foldable, Eq1, Show1, Hashable1) via (Ap2 (Bifree g f) b)
   deriving (Eq, Show) via (Ap2 (Bifree g f) b a)
 
 instance
-  (Hashable a, Hashable (f (Bifree f g a b))) =>
-  Hashable (Bifree g f b a)
+  (Hashable a, Hashable b, Hashable1 g, Hashable1 f) =>
+  Hashable (Bifree g f a b)
+
+instance
+  (Hashable1 g, Hashable1 f, Functor g, Functor f) =>
+  Hashable2 (Bifree g f)
+  where
+  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \pa ->
+    reify (ReifiedHashable hb) $ \pb ->
+      hashWithSalt s $ bimap (mkReflected pa) (mkReflected pb) x
 
 biliftF' :: Functor g => g a -> Bifree f g a b
-biliftF' = BFree . fmap BPure
+biliftF' = monowrap . fmap BPure
 
 biliftF :: (Functor f, Functor g) => f (g a) -> Bifree g f b a
-biliftF = BFree . fmap biliftF'
+biliftF = monowrap . fmap biliftF'
 
 biwrap :: Functor f => f (g (Bifree g f b a)) -> Bifree g f b a
-biwrap = BFree . fmap BFree
+biwrap = monowrap . fmap monowrap
+
+monowrap :: f (Bifree f g a b) -> Bifree g f b a
+monowrap = BFree . Ap
 
 biiter ::
   (Functor f, Functor g) => (f b -> a) -> (g a -> b) -> Bifree g f b a -> a
 biiter _ _ (BPure x) = x
-biiter v w (BFree fx) = v (biiter w v <$> fx)
+biiter v w (BFree (Ap fx)) = v (biiter w v <$> fx)
 
 bihoist ::
   (Functor f', Functor g') =>
@@ -49,7 +60,7 @@ bihoist ::
   Bifree g f b a ->
   Bifree g' f' b a
 bihoist _ _ (BPure x) = BPure x
-bihoist v w (BFree fx) = BFree (bihoist w v <$> v fx)
+bihoist v w (BFree (Ap fx)) = BFree (Ap (bihoist w v <$> v fx))
 
 lhoist ::
   (Functor f, Functor g') =>
@@ -88,7 +99,7 @@ biunfold ::
   Bifree g f b a
 biunfold v w s = case v s of
   Left x -> BPure x
-  Right xs -> BFree (biunfold w v <$> xs)
+  Right xs -> monowrap (biunfold w v <$> xs)
 
 biunfoldM ::
   (Traversable f, Traversable g, Monad m) =>
@@ -99,7 +110,7 @@ biunfoldM ::
 biunfoldM v w s =
   v s >>= \case
     Left x -> pure $ BPure x
-    Right xs -> BFree <$> traverse (biunfoldM w v) xs
+    Right xs -> monowrap <$> traverse (biunfoldM w v) xs
 
 instance (Eq1 g, Eq1 f) => Eq2 (Bifree g f) where
   liftEq2 v w l r = case (l, r) of

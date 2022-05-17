@@ -33,6 +33,7 @@ library
       Core.Multiplicity
       Core.Row
       Core.Term
+      Core.Type.Kinding
       Core.Type.Syntax
       Core.TypeLevel
       Data.Aps

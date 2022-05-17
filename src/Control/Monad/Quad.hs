@@ -3,7 +3,8 @@
 
 module Control.Monad.Quad where
 
-import Control.Monad.Bifree (Bifree (..), bihoist, biiter)
+import Control.Monad.Bifree (Bifree (..), bihoist)
+import qualified Control.Monad.Bifree as Bifree
 import Data.Aps (Ap (..), Ap2 (..))
 import Data.Biapplicative (Bifunctor (..))
 import Data.Bifoldable (Bifoldable (..))
@@ -18,6 +19,9 @@ newtype Quad f g b a = Quad {runQuad :: Bifree (Ap2 f b) (Ap2 g b) a a}
   deriving (Functor, Foldable, Eq1, Show1, Hashable1) via (Ap2 (Quad f g) b)
   deriving (Eq, Show, Hashable) via (Ap2 (Quad f g) b a)
 
+biiter :: (Bifunctor f, Bifunctor g) => (f b a -> a) -> (g b a -> a) -> Quad f g b a -> a
+biiter v w = Bifree.biiter (\(Ap2 x) -> w x) (\(Ap2 x) -> v x) . runQuad
+
 instance (Bifunctor f, Bifunctor g) => Bifunctor (Quad f g) where
   bimap v w = Quad . bimap w w . bihoist (first v) (first v) . runQuad
 
@@ -25,7 +29,7 @@ instance
   (Bifunctor f, Bifunctor g, Bifoldable f, Bifoldable g) =>
   Bifoldable (Quad f g)
   where
-  bifoldMap v w = biiter bifold bifold . runQuad . bimap v w
+  bifoldMap v w = biiter bifold bifold . bimap v w
 
 instance (Bitraversable f, Bitraversable g) => Bitraversable (Quad f g) where
   bitraverse v w = fmap Quad . impl . runQuad . bimap v w

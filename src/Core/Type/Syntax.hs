@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
@@ -10,6 +9,7 @@ import Control.Monad.Free (Free, iter)
 import Control.Monad.FreeBi (FreeBi)
 import Control.Monad.Quad (Quad)
 import Data.Aps (Ap (..), Ap2 (..))
+import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix)
@@ -47,8 +47,8 @@ data MultF l a
   = MLit l
   | MJoin a a
   | MMeet a a
-  deriving (Foldable, Generic, Generic1)
-  deriving (Functor, Eq1, Show1) via (Ap2 MultF l)
+  deriving (Generic, Generic1)
+  deriving (Functor, Foldable, Eq1, Show1) via (Ap2 MultF l)
   deriving (Eq, Show, Hashable) via (Ap2 MultF l a)
 
 instance Hashable l => Hashable1 (MultF l)
@@ -62,6 +62,12 @@ instance Bifunctor MultF where
     MLit b -> MLit (f b)
     MJoin l r -> MJoin (g l) (g r)
     MMeet l r -> MMeet (g l) (g r)
+
+instance Bifoldable MultF where
+  bifoldMap f g = \case
+    MLit b -> f b
+    MJoin l r -> g l <> g r
+    MMeet l r -> g l <> g r
 
 instance Eq2 MultF where
   liftEq2 f g l r = case (l, r) of
@@ -267,13 +273,13 @@ data LambdaF a
   = LVar Int
   | LApp Position a a
   | LAbs ProperKind a
-  | LSPair a a
+  | LSPair Position a a
   | LPair a a
   | LFst Position a
   | LSnd Position a
-  | LPre Position a
+  | LDat Position a
   | LMul Position a
-  | LFix SimpleKind a
+  | LFix Position SimpleKind a
   | LMap Position a a
   deriving (Functor, Generic, Generic1)
   deriving (Eq, Show, Hashable) via (Ap LambdaF a)
@@ -285,13 +291,13 @@ instance Eq1 LambdaF where
     (LVar x, LVar y) -> x == y
     (LApp p g x, LApp q h y) -> p == q && f g h && f x y
     (LAbs k t, LAbs l u) -> k == l && f t u
-    (LSPair s t, LSPair u v) -> f s u && f t v
+    (LSPair p s t, LSPair q u v) -> p == q && f s u && f t v
     (LPair s t, LPair u v) -> f s u && f t v
     (LFst p t, LFst q u) -> p == q && f t u
     (LSnd p t, LSnd q u) -> p == q && f t u
-    (LPre p t, LPre q u) -> p == q && f t u
+    (LDat p t, LDat q u) -> p == q && f t u
     (LMul p t, LMul q u) -> p == q && f t u
-    (LFix k t, LFix l u) -> k == l && f t u
+    (LFix p k t, LFix q l u) -> p == q && k == l && f t u
     (LMap p g x, LMap q h y) -> p == q && f g h && f x y
     _ -> False
 
@@ -308,15 +314,19 @@ instance Show1 LambdaF where
     LAbs k t ->
       showParen (i > abs_prec) $
         showString "\\:: " . showsPrec (abs_prec + 1) k . ia abs_prec t
-    LSPair l r -> parens ("<", ">") $ ia 0 l . showString ", " . ia 0 r
+    LSPair p l r ->
+      showsPrec i p . parens ("<", ">") (ia 0 l . showString ", " . ia 0 r)
     LPair l r -> parens ("<", ">") $ ia 0 l . showString ", " . ia 0 r
     LFst p t -> app_const "fst" p t
     LSnd p t -> app_const "snd" p t
-    LPre p t -> app_const "pre" p t
+    LDat p t -> app_const "dat" p t
     LMul p t -> app_const "mul" p t
-    LFix k t ->
+    LFix p k t ->
       showParen (i > abs_prec) $
-        showString "μ:: " . showsPrec (abs_prec + 1) k . ia abs_prec t
+        showsPrec (abs_prec + 1) p
+          . showString "μ:: "
+          . showsPrec (abs_prec + 1) k
+          . ia abs_prec t
     LMap p f x ->
       showParen (i > map_prec) $
         showsPrec (map_prec + 1) p
@@ -335,10 +345,10 @@ type LambdaTerm = Free LambdaF
 
 data TermF a
   = TLam (LambdaTerm a)
-  | TType (Join TypeTerm a)
-  | TData (Join DataTerm a)
-  | TRow (Join RowTerm a)
-  | TMul (MultTerm a)
+  | TType Position (Join TypeTerm a)
+  | TData Position (Join DataTerm a)
+  | TRow Position (Join RowTerm a)
+  | TMul Position (MultTerm a)
   deriving (Functor, Generic, Generic1)
   deriving (Show, Eq, Hashable) via (Ap TermF a)
 
@@ -350,19 +360,19 @@ instance Hashable1 TermF
 instance Eq1 TermF where
   liftEq f l r = case (l, r) of
     (TLam l, TLam r) -> liftEq f l r
-    (TType l, TType r) -> liftEq f l r
-    (TData l, TData r) -> liftEq f l r
-    (TRow l, TRow r) -> liftEq f l r
-    (TMul l, TMul r) -> liftEq f l r
+    (TType p l, TType q r) -> p == q && liftEq f l r
+    (TData p l, TData q r) -> p == q && liftEq f l r
+    (TRow p l, TRow q r) -> p == q && liftEq f l r
+    (TMul p l, TMul q r) -> p == q && liftEq f l r
     _ -> False
 
 instance Show1 TermF where
   liftShowsPrec ia la i = \case
     TLam t -> liftShowsPrec ia la i t
-    TType t -> liftShowsPrec ia la i t
-    TData t -> liftShowsPrec ia la i t
-    TRow t -> liftShowsPrec ia la i t
-    TMul t -> liftShowsPrec ia la i t
+    TType p t -> showsPrec i p . liftShowsPrec ia la i t
+    TData p t -> showsPrec i p . liftShowsPrec ia la i t
+    TRow p t -> showsPrec i p . liftShowsPrec ia la i t
+    TMul p t -> showsPrec i p . liftShowsPrec ia la i t
 
 type Term = Fix TermF
 

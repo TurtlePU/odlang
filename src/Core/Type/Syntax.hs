@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 
@@ -12,6 +12,7 @@ import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bifunctor.Join (Join (..))
+import Data.Bitraversable (Bitraversable (..))
 import Data.Fix (Fix)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
 import Data.Hashable (Hashable (..))
@@ -68,6 +69,15 @@ instance Bifoldable MultF where
     MLit b -> f b
     MJoin l r -> g l <> g r
     MMeet l r -> g l <> g r
+
+instance Bitraversable MultF where
+  bitraverse f g = \case
+    MLit b -> MLit <$> f b
+    MJoin l r -> MJoin <$> g l <*> g r
+    MMeet l r -> MMeet <$> g l <*> g r
+
+instance Traversable (MultF l) where
+  traverse = bitraverse pure
 
 instance Eq2 MultF where
   liftEq2 f g l r = case (l, r) of
@@ -135,7 +145,7 @@ data RowF e r
   | REntry EntryKey e
   | RJoin r r
   deriving (Generic, Generic1)
-  deriving (Functor, Eq1, Show1) via (Ap2 RowF e)
+  deriving (Functor, Foldable, Eq1, Show1) via (Ap2 RowF e)
   deriving (Eq, Show, Hashable) via (Ap2 RowF e r)
 
 instance Hashable e => Hashable1 (RowF e)
@@ -149,6 +159,21 @@ instance Bifunctor RowF where
     REmpty k -> REmpty k
     REntry k v -> REntry k (f v)
     RJoin l r -> RJoin (g l) (g r)
+
+instance Bifoldable RowF where
+  bifoldMap f g = \case
+    REmpty _ -> mempty
+    REntry _ v -> f v
+    RJoin l r -> g l <> g r
+
+instance Bitraversable RowF where
+  bitraverse f g = \case
+    REmpty k -> pure (REmpty k)
+    REntry k v -> REntry k <$> f v
+    RJoin l r -> RJoin <$> g l <*> g r
+
+instance Traversable (RowF e) where
+  traverse = bitraverse pure
 
 instance Eq2 RowF where
   liftEq2 f g l r = case (l, r) of
@@ -183,7 +208,7 @@ data DataF n a
   | PForall ProperKind a
   | PSpread Connective (RowTerm a n)
   deriving (Generic)
-  deriving (Functor, Eq1, Show1, Hashable1) via (Ap2 DataF n)
+  deriving (Functor, Foldable, Eq1, Show1, Hashable1) via (Ap2 DataF n)
   deriving (Eq, Show) via (Ap2 DataF n a)
 
 instance (Hashable n, Hashable a) => Hashable (DataF n a)
@@ -198,6 +223,21 @@ instance Bifunctor DataF where
     PArrow d c -> PArrow (g d) (g c)
     PForall k t -> PForall k (g t)
     PSpread c r -> PSpread c (bimap g f r)
+
+instance Bifoldable DataF where
+  bifoldMap f g = \case
+    PArrow d c -> g d <> g c
+    PForall _ t -> g t
+    PSpread _ r -> bifoldMap g f r
+
+instance Bitraversable DataF where
+  bitraverse f g = \case
+    PArrow d c -> PArrow <$> g d <*> g c
+    PForall k t -> PForall k <$> g t
+    PSpread c r -> PSpread c <$> bitraverse g f r
+
+instance Traversable (DataF n) where
+  traverse = bitraverse pure
 
 instance Eq2 DataF where
   liftEq2 f g l r = case (l, r) of
@@ -235,7 +275,7 @@ data TypeF n a = TLit
     tyMul :: MultTerm n
   }
   deriving (Generic, Generic1)
-  deriving (Functor, Eq1, Show1) via (Ap2 TypeF n)
+  deriving (Functor, Foldable, Eq1, Show1) via (Ap2 TypeF n)
   deriving (Eq, Show, Hashable) via (Ap2 TypeF n a)
 
 instance Hashable n => Hashable1 (TypeF n)
@@ -246,6 +286,15 @@ instance Hashable2 TypeF where
 
 instance Bifunctor TypeF where
   bimap f g (TLit p q m) = TLit p (g q) (fmap f m)
+
+instance Bifoldable TypeF where
+  bifoldMap f g (TLit _ p m) = g p <> foldMap f m
+
+instance Bitraversable TypeF where
+  bitraverse f g (TLit p q m) = TLit p <$> g q <*> traverse f m
+
+instance Traversable (TypeF n) where
+  traverse = bitraverse pure
 
 instance Eq2 TypeF where
   liftEq2 f g (TLit p q m) (TLit p' q' m') = p == p' && g q q' && liftEq f m m'
@@ -278,7 +327,7 @@ data LambdaF a
   | LMul Position a
   | LFix Position SimpleKind a
   | LMap Position a a
-  deriving (Functor, Generic, Generic1)
+  deriving (Functor, Foldable, Traversable, Generic, Generic1)
   deriving (Eq, Show, Hashable) via (Ap LambdaF a)
 
 instance Hashable1 LambdaF
@@ -346,7 +395,7 @@ data TermF a
   | TData Position (Join DataTerm a)
   | TRow Position (Join RowTerm a)
   | TMul Position (MultTerm a)
-  deriving (Functor, Generic, Generic1)
+  deriving (Functor, Foldable, Traversable, Generic, Generic1)
   deriving (Show, Eq, Hashable) via (Ap TermF a)
 
 instance Hashable2 f => Hashable1 (Join f) where

@@ -93,18 +93,12 @@ synthesizeKind = foldFix $ \case
       REntry _ v -> pure $ Row <$> v
       RJoin l r -> l <> r
 
-    failWith e = CtxR $ const $ Err $ pure e
-
     intoCheck p k k' =
       if k == k'
         then pure ()
         else failWith $ KMismatch p k' $ EKind k
 
     intoAssert p k k' = intoCheck p k k' $> k
-
-    pullArrow p = \case
-      (k :->: k') -> pure (k, k')
-      k' -> failWith $ KMismatch p k' EOperator
 
     pullSimple p = \case
       Simple k -> pure k
@@ -114,3 +108,10 @@ synthesizeKind = foldFix $ \case
       Simple (k :*: k') -> pure (Simple k, Simple k')
       (k :**: k') -> pure (k, k')
       k' -> failWith $ KMismatch p k' EPair
+
+pullArrow :: Position -> ProperKind -> KindingResult (ProperKind, ProperKind)
+pullArrow p = \case
+  (k :->: k') -> pure (k, k')
+  k' -> failWith $ KMismatch p k' EOperator
+
+failWith e = CtxR $ const $ Err $ pure e

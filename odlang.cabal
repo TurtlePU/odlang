@@ -30,6 +30,7 @@ library
       Control.Monad.Quad
       Core.Term
       Core.Type.Equivalence
+      Core.Type.Evaluation
       Core.Type.Kinding
       Core.Type.Syntax
       Data.Aps

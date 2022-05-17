@@ -53,6 +53,11 @@ biiter ::
 biiter _ _ (BPure x) = x
 biiter v w (BFree (Ap fx)) = v (biiter w v <$> fx)
 
+biiterA ::
+  (Functor f, Functor g, Applicative p) =>
+  (f (p b) -> p a) -> (g (p a) -> p b) -> Bifree g f b a -> p a
+biiterA v w = biiter v w . bimap pure pure
+
 bihoist ::
   (Functor f', Functor g') =>
   (forall a. f a -> f' a) ->
@@ -128,6 +133,14 @@ llift ::
   Bifree g f c a
 llift _ (BPure x) = BPure x
 llift h (BFree fx) = BFree ((>>= h) <$> fx)
+
+bilift ::
+  (Functor g, Functor f) =>
+  (a -> Bifree g f b c) ->
+  (b -> Bifree f g c d) ->
+  Bifree g f b a ->
+  Bifree g f d c
+bilift v w = llift w . (>>= v)
 
 instance (Foldable g, Foldable f) => Bifoldable (Bifree g f) where
   bifoldMap v w (BPure x) = w x

@@ -24,7 +24,8 @@ newtype FreeBi f a b = FreeBi {runFreeBi :: Free (Ap2 f a) b}
 iter :: Bifunctor f => (f a b -> b) -> FreeBi f a b -> b
 iter g = Free.iter (\(Ap2 x) -> g x) . runFreeBi
 
-iterA :: (Applicative p, Bifunctor f) => (f a (p b) -> p b) -> FreeBi f a b -> p b
+iterA ::
+  (Applicative p, Bifunctor f) => (f a (p b) -> p b) -> FreeBi f a b -> p b
 iterA g = Free.iterA (\(Ap2 x) -> g x) . runFreeBi
 
 instance (Functor f, Hashable1 f) => Hashable1 (Free f)

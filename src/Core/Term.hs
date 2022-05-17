@@ -21,7 +21,8 @@ data RowKey
 
 type RowBag = IndexedBag RowKey
 
-withValues :: Functor f => ([v] -> f [v']) -> IndexedBag k v -> f (IndexedBag k v')
+withValues ::
+  Functor f => ([v] -> f [v']) -> IndexedBag k v -> f (IndexedBag k v')
 withValues g (IBag kv) = IBag . zip (fst <$> kv) <$> g (snd <$> kv)
 
 data Direction = DLeft | DRight

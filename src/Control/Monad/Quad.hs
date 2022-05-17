@@ -19,7 +19,12 @@ newtype Quad f g b a = Quad {runQuad :: Bifree (Ap2 f b) (Ap2 g b) a a}
   deriving (Functor, Foldable, Eq1, Show1, Hashable1) via (Ap2 (Quad f g) b)
   deriving (Eq, Show, Hashable) via (Ap2 (Quad f g) b a)
 
-biiter :: (Bifunctor f, Bifunctor g) => (f b a -> a) -> (g b a -> a) -> Quad f g b a -> a
+biiter ::
+  (Bifunctor f, Bifunctor g) =>
+  (f b a -> a) ->
+  (g b a -> a) ->
+  Quad f g b a ->
+  a
 biiter v w = Bifree.biiter (\(Ap2 x) -> w x) (\(Ap2 x) -> v x) . runQuad
 
 instance (Bifunctor f, Bifunctor g) => Bifunctor (Quad f g) where

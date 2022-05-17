@@ -385,12 +385,10 @@ instance Show1 LambdaF where
       map_prec = 6
       app_const s p t = showsPrec (app_prec + 1) p . appConst ia s i t
 
-type LambdaTerm = Free LambdaF
-
 --------------------------------- GENERIC TERM ---------------------------------
 
 data TermF a
-  = TLam (LambdaTerm a)
+  = TLam (LambdaF a)
   | TType Position (Join TypeTerm a)
   | TData Position (Join DataTerm a)
   | TRow Position (Join RowTerm a)

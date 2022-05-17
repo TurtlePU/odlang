@@ -40,7 +40,7 @@ type KindingResult = CtxResult [ProperKind] KindingErrors
 
 synthesizeKind :: Term -> KindingResult ProperKind
 synthesizeKind = foldFix $ \case
-  TLam t -> flip iter t $ \case
+  TLam t -> case t of
     LVar i -> CtxR $ Ok . (!! i)
     LApp p f x -> do
       (kx, ky) <- f >>= pullArrow p

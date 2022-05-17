@@ -17,11 +17,16 @@ import Data.HashMultiMap (HashMultiMap (..))
 import qualified Data.HashMultiMap as HashMultiMap
 import Data.IndexedBag (IndexedBag)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Position (Position)
+import Data.Reflection (reify)
+import Data.Reflection.Instances (ReifiedEq (ReifiedEq), mkReflected)
 import Data.Result (Result (..))
 
 ------------------------------------- MULT -------------------------------------
 
-checkMultEQ :: Eq a => MultTerm a -> MultTerm a -> Maybe (IndexedBag a MultLit)
+type Offender a = IndexedBag a MultLit
+
+checkMultEQ :: Eq a => MultTerm a -> MultTerm a -> Maybe (Offender a)
 checkMultEQ l r =
   (fmap (`MultLit` False) <$> eqVia noWeakening)
     <|> (fmap (MultLit False) <$> eqVia noContraction)
@@ -74,6 +79,8 @@ instance Eq a => Boolean (DNF a) where
 
 ------------------------------------ ROWS --------------------------------------
 
+data RowEqError = EVars | EKeys | EUnder EntryKey
+
 checkRowEQ :: (Eq t, Eq r) => RowTerm t r -> RowTerm t r -> [RowEqError]
 checkRowEQ l r =
   let (lLit, lVar) = intoRow l
@@ -113,45 +120,14 @@ instance (Eq t, Eq r) => Semigroup (Row t r) where
 instance (Eq t, Eq r) => Monoid (Row t r) where
   mempty = MkRow mempty mempty
 
-data RowEqError = EVars | EKeys | EUnder EntryKey
-
 --------------------------------- TYPE + DATA ----------------------------------
 
-type TyEqResult n a = Result (NonEmpty (TyEqError n)) [TyEqAssumption n a]
+type Assumption a = (a, a)
 
--- TODO: use correct equality, not the structural one
+type TyEqAssumption n a =
+  Either (Assumption (TypeTerm n a)) (Assumption (Position, DataTerm n a))
 
-checkTypeEQ :: (Eq n, Eq a) => TypeTerm n a -> TypeTerm n a -> TyEqResult n a
-checkTypeEQ l r = case (l, r) of
-  ( Quad (BFree (Ap (Ap2 (TLit ql pl ml)))),
-    Quad (BFree (Ap (Ap2 (TLit qr pr mr))))
-    ) ->
-      (<>) <$> checkDataEQ (Quad pl) (Quad pr) <*> fromMult (checkMultEQ ml ml)
-  (l, r) -> Ok [Left (l, r)]
-  where
-    fromMult = \case
-      Just errs -> Err $ pure $ EMult errs
-      Nothing -> Ok []
-
-checkDataEQ :: (Eq n, Eq a) => DataTerm n a -> DataTerm n a -> TyEqResult n a
-checkDataEQ l r = case (l, r) of
-  (Quad (BFree (Ap (Ap2 l))), Quad (BFree (Ap (Ap2 r)))) -> case (l, r) of
-    (PArrow f t, PArrow f' t') ->
-      (<>) <$> checkTypeEQ (Quad f) (Quad f') <*> checkTypeEQ (Quad t) (Quad t')
-    (PForall k t, PForall k' t') ->
-      if k == k'
-        then checkTypeEQ (Quad t) (Quad t')
-        else Err $ pure $ EData (VForall k, VForall k')
-    (PSpread c r, PSpread c' r') ->
-      if c == c'
-        then fromRow $ checkRowEQ r r'
-        else Err $ pure $ EData (VSpread c, VSpread c')
-    (l, r) -> Err $ pure $ EData (getVariety l, getVariety r)
-  (l, r) -> Ok [Right (l, r)]
-  where
-    fromRow = \case
-      [] -> Ok []
-      (x : xs) -> Err $ pure $ ESpread (x :| xs)
+type Assumptions n a = [TyEqAssumption n a]
 
 data DataVariety
   = VArrow
@@ -165,11 +141,63 @@ getVariety = \case
   PSpread c _ -> VSpread c
 
 data TyEqError n
-  = EData (Assumption DataVariety)
-  | ESpread (NonEmpty RowEqError)
-  | EMult (IndexedBag n MultLit)
+  = EData Position Position (Assumption DataVariety)
+  | ESpread Position Position (NonEmpty RowEqError)
+  | EMult Position Position (IndexedBag n MultLit)
 
-type TyEqAssumption n a =
-  Either (Assumption (TypeTerm n a)) (Assumption (DataTerm n a))
+type TyEqResult n a = Result (NonEmpty (TyEqError n)) (Assumptions n a)
 
-type Assumption a = (a, a)
+checkTypeEQ ::
+  (Eq n, Eq a) =>
+  (Assumptions n a -> Bool) ->
+  TypeTerm n a ->
+  TypeTerm n a ->
+  TyEqResult n a
+checkTypeEQ f l r = case (l, r) of
+  ( Quad (BFree (Ap (Ap2 (TLit ql pl ml)))),
+    Quad (BFree (Ap (Ap2 (TLit qr pr mr))))
+    ) ->
+      (<>)
+        <$> checkDataEQ f ql (Quad pl) qr (Quad pr)
+        <*> fromMult ql qr (checkMultEQ ml ml)
+  (l, r) -> Ok [Left (l, r)]
+  where
+    fromMult p q = \case
+      Just errs -> Err $ pure $ EMult p q errs
+      Nothing -> Ok []
+
+checkDataEQ ::
+  (Eq n, Eq a) =>
+  (Assumptions n a -> Bool) ->
+  Position ->
+  DataTerm n a ->
+  Position ->
+  DataTerm n a ->
+  TyEqResult n a
+checkDataEQ v p l q r = case (l, r) of
+  (Quad (BFree (Ap (Ap2 l))), Quad (BFree (Ap (Ap2 r)))) -> case (l, r) of
+    (PArrow f t, PArrow f' t') ->
+      (<>)
+        <$> checkTypeEQ v (Quad f) (Quad f')
+        <*> checkTypeEQ v (Quad t) (Quad t')
+    (PForall k t, PForall k' t') ->
+      if k == k'
+        then checkTypeEQ v (Quad t) (Quad t')
+        else Err $ pure $ EData p q (VForall k, VForall k')
+    (PSpread c r, PSpread c' r') ->
+      if c == c'
+        then fromRow $
+          reify (ReifiedEq $ finish v) $ \p ->
+            checkRowEQ (reflected p r) (reflected p r')
+        else Err $ pure $ EData p q (VSpread c, VSpread c')
+    (l, r) -> Err $ pure $ EData p q (getVariety l, getVariety r)
+  (l, r) -> Ok [Right ((p, l), (q, r))]
+  where
+    fromRow = \case
+      [] -> Ok []
+      (x : xs) -> Err $ pure $ ESpread p q (x :| xs)
+    finish v l r =
+      case checkTypeEQ v (Quad l) (Quad r) of
+        Ok xs -> v xs
+        Err _ -> False
+    reflected = first . mkReflected

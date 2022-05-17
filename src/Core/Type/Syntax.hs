@@ -126,9 +126,6 @@ interpT = \case
   MJoin l r -> l `join` r
   MMeet l r -> l `meet` r
 
-interp :: Boolean b => Free (MultF Bool) b -> b
-interp = iter interpT
-
 ------------------------------------- ROWS -------------------------------------
 
 type EntryKey = String

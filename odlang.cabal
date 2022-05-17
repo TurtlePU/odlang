@@ -28,14 +28,10 @@ library
       Control.Monad.Bifree
       Control.Monad.FreeBi
       Control.Monad.Quad
-      Core.Data
-      Core.Kind
-      Core.Multiplicity
-      Core.Row
       Core.Term
+      Core.Type.Equivalence
       Core.Type.Kinding
       Core.Type.Syntax
-      Core.TypeLevel
       Data.Aps
       Data.EqBag
       Data.HashMultiMap

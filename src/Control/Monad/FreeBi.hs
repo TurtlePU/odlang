@@ -4,7 +4,7 @@
 
 module Control.Monad.FreeBi where
 
-import Control.Monad.Free (Free (..), hoistFree, iter)
+import Control.Monad.Free (Free (..), hoistFree)
 import qualified Control.Monad.Free as Free
 import Data.Aps (Ap2 (..))
 import Data.Bifoldable (Bifoldable (..))
@@ -21,6 +21,9 @@ newtype FreeBi f a b = FreeBi {runFreeBi :: Free (Ap2 f a) b}
   deriving (Functor, Foldable, Eq1, Show1, Hashable1) via (Ap2 (FreeBi f) a)
   deriving (Eq, Show, Hashable) via (Ap2 (FreeBi f) a b)
 
+iter :: Bifunctor f => (f a b -> b) -> FreeBi f a b -> b
+iter g = Free.iter (\(Ap2 x) -> g x) . runFreeBi
+
 iterA :: (Applicative p, Bifunctor f) => (f a (p b) -> p b) -> FreeBi f a b -> p b
 iterA g = Free.iterA (\(Ap2 x) -> g x) . runFreeBi
 
@@ -34,7 +37,7 @@ instance Bifunctor f => Bifunctor (FreeBi f) where
   bimap f g = FreeBi . fmap g . hoistFree (first f) . runFreeBi
 
 instance (Bifunctor f, Bifoldable f) => Bifoldable (FreeBi f) where
-  bifoldMap g h = iter (bifoldMap g id) . fmap h . runFreeBi
+  bifoldMap g h = iter (bifoldMap g id) . fmap h
 
 instance Bitraversable f => Bitraversable (FreeBi f) where
   bitraverse g h = fmap FreeBi . impl . runFreeBi

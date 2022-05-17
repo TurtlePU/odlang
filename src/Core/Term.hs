@@ -2,10 +2,12 @@ module Core.Term where
 
 import Control.Arrow ((>>>))
 import Control.Monad (forM_, zipWithM)
-import Core.Kind
-import Core.TypeLevel
+import Core.Type.Kinding (KindingError, KindingResult)
+import Core.Type.Syntax (ProperKind)
+import qualified Core.Type.Syntax as TL
 import Data.Bifunctor
 import Data.Either (partitionEithers)
+import Data.HashMap.Strict (alter, elems)
 import Data.IndexedBag
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (fromMaybe)
@@ -33,18 +35,23 @@ xs !!! s = partitionEithers $ zipWith direct s xs
 type SplitN = [Int]
 
 (!*!) :: [a] -> SplitN -> [[a]] -- list of contexts
+-- TODO: may be buggy
 xs !*! s = elems $ foldr putAt mempty $ zip xs s
   where
-    putAt = uncurry $ \x -> alter ((x :) . fromMaybe mempty)
+    putAt = uncurry $ \x -> alter (Just . (x :) . fromMaybe mempty)
 
-type Row = Positioned TLTerm
+type Row = TL.Term
+
+type Type = Row
+
+type Mult = Row
 
 data Term t
   = TVar
   | TAbs Int Type t Mult
   | TApp Split t t
   | TGen ProperKind t Mult
-  | TInst t (Positioned TLTerm)
+  | TInst t TL.Term
   | TAndI SplitN (RowBag t) Mult
   | TAndE Split t [RowKey] t
   | TWithI (RowBag t) Mult
@@ -102,7 +109,7 @@ synthesizeType (Posed p (TOrE s tm rs)) = _
 pairM :: Monad m => m b -> a -> m (a, b)
 pairM b = flip fmap b . (,)
 
-mkAlgebraic :: Connective -> Position -> IndexedBag RowKey Type -> Type
+mkAlgebraic :: TL.Connective -> Position -> IndexedBag RowKey Type -> Type
 mkAlgebraic c p = Posed p . KPretype . PSpread c . Posed p . KRow . _
 
 splitCtx :: Split -> TypingResult a -> (a -> TypingResult b) -> TypingResult b

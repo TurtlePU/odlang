@@ -68,8 +68,8 @@ system guarantees a predictable behavior of effectful computations; we model
 these using row polymorphism and recursive types. The result of the
 transformation lets us represent effectful programs in the continuation-passing
 style, which should be familiar to those who are acquainted with Freer monads.
-As a proof of concept, we implement an interpreter in Haskell, which we consider
-to be one of the main inspirations for this project.
+As a proof of concept, we implement an interpreter in Haskell. We consider the
+latter to be one of the main inspirations for this project.
 
 Мы предлагаем новый язык программирования, OdLang, в котором алгебраические
 эффекты отслеживаются системой типов в форме поли\-морфных типов эффектов.
@@ -78,7 +78,7 @@ to be one of the main inspirations for this project.
 данных. В ре\-зультате преобразования мы можем представить программы с эффектами
 в стиле передачи продолжений, который должен быть знаком работавшим с монадой
 \verb|Freer|. В качестве доказательства концепции мы реализуем интерпретатор
-нашего языка на языке Haskell, который мы считаем одним из основных
+нашего языка на языке Haskell. Последний мы считаем одним из основных
 вдохновений для проекта.
 
 \textbf{Keywords}: algebraic effects, substructural type system, bidirectional
@@ -112,13 +112,13 @@ expands on the topic.
 We begin with a general analysis of effect systems including the ones mentioned
 above as well as their analogues in Haskell. Then we overview the features in
 our language that aid algebraic effects and show the necessity to split the
-language in two layers --- core language and surface language. In the following
-pages, we provide a complete description of the type system, differences between
+language in two layers --- core language and surface language. In what follows,
+we provide a complete description of the type system, differences between
 surface and core languages and, finally, all related algorithmic procedures.
 
-The results are twofold. Firstly, we present a profound design of a sound
+The results are twofold. First, we present a profound design of a sound
 substructural type system for a functional language with algebraic effects.
-Secondly, we provide a proof-of-concept interpreter of a core language in
+Second, we provide a proof-of-concept interpreter of a core language in
 Haskell. Interpreter of a surface language, formal verification of soundness and
 implementation of efficient self-hosting compiler are reserved for future work.
 
@@ -176,8 +176,8 @@ Actually, there already are a few different substructural type systems.
 Linear Types extension in Haskell \cite{linear} and unique types in Rust
 \cite{rust} are the most well-known examples, although we take a slightly
 different approach which is extensively described in \cite{ural}. As of our
-current knowledge, this project is the first to utilize URAL for language with
-algebraic effects.
+current knowledge, this project is the first to utilize URAL, the type system
+described in \cite{ural}, for language with algebraic effects.
 
 Now, let's take a step back and pay attention to the ergonomics of the language.
 Effect types themselves make type signatures more complicated than those in
@@ -248,17 +248,17 @@ a reason which will become clear once we discuss effect types in the next
 chapter.
 
 $\times$ is a kind constructor for type-level pairs which are extremely useful
-for both mutually recursive types and desugaring of effect types. $(\to)$ are
-your usual type operators.
+for both mutually recursive types and desugaring of effect types. $(\to)$ is a
+kind constructor for kinds of type operators.
 
 \section{Type-level operations}
 
-To encode relations between kinds, OdLang Core has a dedicated dialect of STLC
-with pairs and a fixpoint. Its kinding rules are fairly standard and are given
-in \ref{typelevel}; $K$ is a standard context supporting exchange, weakening and
-contraction. However, in addition to these generic rules, each kind has its own
-additional set of rules. To denote this, we reuse these terms later and refer to
-them as ``$E$-terms''.
+To encode relations between kinds, OdLang Core has a dedicated dialect of simply
+typed lambda calculus with pairs and a fixpoint. Its kinding rules are fairly
+standard and are given in \ref{typelevel}; $K$ is a standard context supporting
+exchange, weakening and contraction. However, in addition to these generic
+rules, each kind has its own additional set of rules. To denote this, we reuse
+the terms provided here later and refer to them as ``$E$-terms''.
 
 \begin{figure}[h!]
     \centering
@@ -365,7 +365,7 @@ this evaluation strategy yields opaque $E$-terms (given they are of kind
         binary predicate $a =_E b$ on $E$-terms which decides their equality.
 
         \textbf{Expected output}: let us call a function from $E$-terms to
-        multiplicity literals a \textit{valuation} if it respects $\_ =_E \_$.
+        multiplicity literals a \textit{valuation} if it respects $(=_E)$.
         If given multiplicity terms evaluate to the same multiplicity literal
         under any possible valuation, say ``YES''. If there exists a valuation
         under which the evaluation differs, output it or any subset (partial
@@ -392,7 +392,7 @@ this evaluation strategy yields opaque $E$-terms (given they are of kind
     \item EQUALITY OF MONOTONIC BOOLEAN FORMULAE.
 
         \textbf{Input}: two boolean formulas $\phi, \psi$ consisting of boolean
-        literals, $\lor$, $\land$ and opaque $E$-terms. $\_ =_E \_$ is still
+        literals, $\lor$, $\land$ and opaque $E$-terms. $(=_E)$ is still
         available.
 
         \textbf{Expected output}: a partial valuation to booleans which
@@ -417,11 +417,11 @@ this evaluation strategy yields opaque $E$-terms (given they are of kind
         \textbf{Expected output}: a partial valuation $a$ which offends
         $\phi(a) \to \psi (a)$, if any.
 
-        \textbf{Solution}: we hope that there exists a solution which is
-        polynomial in the size of formulas, however it seems impossible unless
-        $\text{P}=\text{NP}$. The solution we provide is worst-time exponential;
-        it is however not of great concern because we do not expect multiplicity
-        terms to be big.
+        \textbf{Solution}: We do not know whether this problem has a polynomial
+        solution or if it is NP-complete (it is in NP, though, because it
+        obviously reduces to SAT). The solution we provide is worst-time
+        exponential; it is however not of great concern because we do not expect
+        multiplicity terms to be big.
 
         First of all, note that for every boolean formula we receive, we can
         build an equivalent CNF and DNF using a depth-first tree traversal. In
@@ -715,14 +715,14 @@ for the future.
     \begin{mathpar}
         \inferrule
             {\forall n \in\text{keys}\;R:
-                \quad K;\Gamma_n \;\vdash\; e_n : R\{n\}
+                \quad K;\Gamma_n \;\vdash\; e_n : R[n]
                 \\\\ K \;\vdash\; \text{sup} \; R \le m}
             {K;\overline{\Gamma_n} \;\vdash\;
                 \{\overline{.n : e_n}\} : \{\dots R\}^m}
             \textsc{TAndI} \and
         \inferrule
             {K;\Gamma \;\vdash\; s : \{\dots R\}^m
-                \\ K;\; \Delta,R\{\ldots\} \;\vdash\; e:t}
+                \\ K;\; \Delta,R \;\vdash\; e:t}
             {K;\;\Gamma,\Delta \;\vdash\;
                 \textbf{let} \; \{.1,\dots,.n\} = s \; \textbf{in} \; e : t}
             \textsc{TAndE} \and
@@ -736,14 +736,14 @@ for the future.
             {K;\Gamma \;\vdash\; w.n : R[n]}
             \textsc{TWithE} \and
         \inferrule
-            {K;\Gamma \;\vdash\; e : R(|n|)
-                \\ K \;\vdash\; \text{mul} \; R(|n|) \le m}
+            {K;\Gamma \;\vdash\; e : R[n]
+                \\ K \;\vdash\; \text{mul} \; R[n] \le m}
             {K;\Gamma \;\vdash\; .n \; e : (|\dots R|)^m}
             \textsc{TOrI} \and
         \inferrule
             {K;\Gamma \;\vdash\; o : (|\dots R|)^m
                 \\\\ \forall n \in \text{keys}\;R:
-                \quad K;\; x:R(|n|),\; \Delta \;\vdash\; e_n : t}
+                \quad K;\; x:R[n],\; \Delta \;\vdash\; e_n : t}
             {K;\;\Gamma,\Delta \;\vdash\; \textbf{case} \; o
                 \; \textbf{of} \; (\overline{.n \; x := e_n}) : t}
             \textsc{TOrE}
@@ -1218,33 +1218,33 @@ polished model of computations with side effects which is an improvement upon
 analogues in terms of soundness and, theoretically, performance. While doing so,
 we made initially unrelated constructs from different type systems interplay
 nicely: row polymorphism with substructural typing, both type-level pairs and
-row polymorphism with algebraic effects... In addition, we saved ourselves the
+row polymorphism with algebraic effects etc. In addition, we saved ourselves the
 headache of developing a dedicated runtime for algebraic effects using a
 well-typed encoding into continuation-passing style.
 
 Secondly, we have implemented an interpreter of the core language described
 above except for problems with tunneling whose resolution is our primary
-goal after the project.
+goal after the project. Source code is available at
+\url{https://github.com/TurtlePU/odlang}.
 
 Last but not least, we came up with the design of a surface language
 with algebraic effects and handlers which nicely fit into a substructural type
-system. This language features effect, row and multiplicity polymorphism and is
+system. This language features row, effect and multiplicity polymorphism and is
 suitable for modeling complex effectful interactions. All related algorithms are
-elaborated and are ready to be implemented in an interpreter in Haskell which
-will be presented as the main result of our thesis.
+elaborated and are ready to be implemented in an interpreter.
 
 The most notable limitation of our solution is that core language is hardly
 extensible: generalized algebraic data types cannot be easily fit into it;
 coexistence of dependent types with substructural types is still an ongoing
-research topic;... To overcome this limitation, we can make use of the
-two-layered architecture of the language and change core language independently
-from the surface to incorporate new features.
+research topic; and so forth. To overcome these limitations in the future, we
+can make use of the two-layered architecture of the language and change core
+language independently from the surface to incorporate new features.
 
 Nevertheless, as it was said in the beginning, the subsequent goals after this
 project are to write an interpreter for the surface language, formally verify
-soundness of the type system and write a self-hosting compiler. The second one
-is needed primarily to exclude the human factor; writing a compiler is required
-to fulfill promises of performance.
+soundness of the type system and write a self-hosting compiler. Formal
+verification is needed primarily to exclude the human factor; writing a compiler
+is required to fulfill promises of performance.
 
 Designing one more programming language might not change anything in the grand
 scheme of things; however, in order to reach the ideal future where every

@@ -417,11 +417,11 @@ this evaluation strategy yields opaque $E$-terms (given they are of kind
         \textbf{Expected output}: a partial valuation $a$ which offends
         $\phi(a) \to \psi (a)$, if any.
 
-        \textbf{Solution}: We do not know whether this problem has a polynomial
-        solution or if it is NP-complete (it is in NP, though, because it
-        obviously reduces to SAT). The solution we provide is worst-time
-        exponential; it is however not of great concern because we do not expect
-        multiplicity terms to be big.
+        \textbf{Solution}: We do not know whether this problem has a solution
+        which runs in polynomial time or if it is coNP-complete (it is in coNP
+        because it obviously reduces to the complement of SAT). The solution we
+        provide is worst-time exponential; it is however not of great concern
+        because we do not expect multiplicity terms to be big.
 
         First of all, note that for every boolean formula we receive, we can
         build an equivalent CNF and DNF using a depth-first tree traversal. In
@@ -623,7 +623,7 @@ Declarative rules for terms follow straightforwardly from rules for data and are
 provided in Fig.\ref{terms-1}-\ref{terms-2}. Declarative rules for substructural
 term context are conventional and are provided in Fig.\ref{terms-1}. Note that
 while defining operations on rows, we have to account for polymorphic rows. We
-do this by introducing a special entities, called \textbf{keys} of rows. They
+do this by introducing special entities, called \textbf{keys} of rows. They
 include not only names of entries, but also aliases for $E$-terms; to fully
 formalize this, we would have to introduce a third context, context of keys and
 related existential variables, into the typing judgement; however, this brings
@@ -762,7 +762,7 @@ and $\Delta$? In our interpreter, we approach this by storing a description of
 context split in every term that requires context splitting for its
 corresponding logical rule. This description is a list of directions: for every
 variable instance in a context, there is a direction showing it in which part of
-term to go. It can be built by simple depth-first tree traversal.
+term to go. It can be built with a simple depth-first tree traversal.
 
 However, this approach has several limitations:
 

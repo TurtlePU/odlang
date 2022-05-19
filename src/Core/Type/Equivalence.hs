@@ -3,11 +3,8 @@
 module Core.Type.Equivalence where
 
 import Control.Applicative (Alternative ((<|>)), liftA2)
-import Control.Monad.Bifree (Bifree (BFree))
 import Control.Monad.FreeBi (FreeBi (FreeBi), iter)
-import Control.Monad.Quad (Quad (Quad))
 import Core.Type.Syntax
-import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifunctor (Bifunctor (first))
 import Data.EqBag (EqBag)
 import qualified Data.EqBag as EqBag
@@ -16,11 +13,6 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.HashMultiMap (HashMultiMap (..))
 import qualified Data.HashMultiMap as HashMultiMap
 import Data.IndexedBag (IndexedBag)
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.Position (Position)
-import Data.Reflection (reify)
-import Data.Reflection.Instances (ReifiedEq (ReifiedEq), mkReflected)
-import Data.Result (Result (..))
 
 ------------------------------------- MULT -------------------------------------
 
@@ -120,84 +112,4 @@ instance (Eq t, Eq r) => Semigroup (Row t r) where
 instance (Eq t, Eq r) => Monoid (Row t r) where
   mempty = MkRow mempty mempty
 
---------------------------------- TYPE + DATA ----------------------------------
-
-type Assumption a = (a, a)
-
-type TyEqAssumption n a =
-  Either (Assumption (TypeTerm n a)) (Assumption (Position, DataTerm n a))
-
-type Assumptions n a = [TyEqAssumption n a]
-
-data DataVariety
-  = VArrow
-  | VForall ProperKind
-  | VSpread Connective
-
-getVariety :: DataF n a -> DataVariety
-getVariety = \case
-  PArrow _ _ -> VArrow
-  PForall k _ -> VForall k
-  PSpread c _ -> VSpread c
-
-data TyEqError n
-  = EData Position Position (Assumption DataVariety)
-  | ESpread Position Position (NonEmpty RowEqError)
-  | EMult Position Position (IndexedBag n MultLit)
-
-type TyEqResult n a = Result (NonEmpty (TyEqError n)) (Assumptions n a)
-
-checkTypeEQ ::
-  (Eq n, Eq a) =>
-  (Assumptions n a -> Bool) ->
-  TypeTerm n a ->
-  TypeTerm n a ->
-  TyEqResult n a
-checkTypeEQ f l r = case (l, r) of
-  ( Quad (BFree (Ap (Ap2 (TLit ql pl ml)))),
-    Quad (BFree (Ap (Ap2 (TLit qr pr mr))))
-    ) ->
-      (<>)
-        <$> checkDataEQ f ql (Quad pl) qr (Quad pr)
-        <*> fromMult ql qr (checkMultEQ ml ml)
-  (l, r) -> Ok [Left (l, r)]
-  where
-    fromMult p q = \case
-      Just errs -> Err $ pure $ EMult p q errs
-      Nothing -> Ok []
-
-checkDataEQ ::
-  (Eq n, Eq a) =>
-  (Assumptions n a -> Bool) ->
-  Position ->
-  DataTerm n a ->
-  Position ->
-  DataTerm n a ->
-  TyEqResult n a
-checkDataEQ v p l q r = case (l, r) of
-  (Quad (BFree (Ap (Ap2 l))), Quad (BFree (Ap (Ap2 r)))) -> case (l, r) of
-    (PArrow f t, PArrow f' t') ->
-      (<>)
-        <$> checkTypeEQ v (Quad f) (Quad f')
-        <*> checkTypeEQ v (Quad t) (Quad t')
-    (PForall k t, PForall k' t') ->
-      if k == k'
-        then checkTypeEQ v (Quad t) (Quad t')
-        else Err $ pure $ EData p q (VForall k, VForall k')
-    (PSpread c r, PSpread c' r') ->
-      if c == c'
-        then fromRow $
-          reify (ReifiedEq $ finish v) $ \p ->
-            checkRowEQ (reflected p r) (reflected p r')
-        else Err $ pure $ EData p q (VSpread c, VSpread c')
-    (l, r) -> Err $ pure $ EData p q (getVariety l, getVariety r)
-  (l, r) -> Ok [Right ((p, l), (q, r))]
-  where
-    fromRow = \case
-      [] -> Ok []
-      (x : xs) -> Err $ pure $ ESpread p q (x :| xs)
-    finish v l r =
-      case checkTypeEQ v (Quad l) (Quad r) of
-        Ok xs -> v xs
-        Err _ -> False
-    reflected = first . mkReflected
+-- TODO: general equivalence

@@ -203,61 +203,34 @@ data Connective = CAnd | CWith | COr deriving (Eq, Show, Generic)
 
 instance Hashable Connective
 
-data DataF n a
+data DataF a
   = PArrow a a
   | PForall ProperKind a
-  | PSpread Connective (RowTerm a n)
-  deriving (Generic)
-  deriving (Functor, Foldable, Eq1, Show1, Hashable1) via (Ap2 DataF n)
-  deriving (Eq, Show) via (Ap2 DataF n a)
+  | PSpread Connective a
+  deriving (Generic, Generic1, Functor, Foldable, Traversable)
+  deriving (Eq, Show, Hashable) via (Ap DataF a)
 
-instance (Hashable n, Hashable a) => Hashable (DataF n a)
+instance Hashable1 DataF
 
-instance Hashable2 DataF where
-  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \pa ->
-    reify (ReifiedHashable hb) $ \pb ->
-      hashWithSalt s $ bimap (mkReflected pa) (mkReflected pb) x
-
-instance Bifunctor DataF where
-  bimap f g = \case
-    PArrow d c -> PArrow (g d) (g c)
-    PForall k t -> PForall k (g t)
-    PSpread c r -> PSpread c (bimap g f r)
-
-instance Bifoldable DataF where
-  bifoldMap f g = \case
-    PArrow d c -> g d <> g c
-    PForall _ t -> g t
-    PSpread _ r -> bifoldMap g f r
-
-instance Bitraversable DataF where
-  bitraverse f g = \case
-    PArrow d c -> PArrow <$> g d <*> g c
-    PForall k t -> PForall k <$> g t
-    PSpread c r -> PSpread c <$> bitraverse g f r
-
-instance Traversable (DataF n) where
-  traverse = bitraverse pure
-
-instance Eq2 DataF where
-  liftEq2 f g l r = case (l, r) of
-    (PArrow c d, PArrow c' d') -> g c c' && g d d'
-    (PForall k t, PForall k' t') -> k == k' && g t t'
-    (PSpread c r, PSpread c' r') -> c == c' && liftEq2 g f r r'
+instance Eq1 DataF where
+  liftEq f l r = case (l, r) of
+    (PArrow c d, PArrow c' d') -> f c c' && f d d'
+    (PForall k t, PForall k' t') -> k == k' && f t t'
+    (PSpread c r, PSpread c' r') -> c == c' && f r r'
     _ -> False
 
-instance Show2 DataF where
-  liftShowsPrec2 ia la ib lb i = \case
+instance Show1 DataF where
+  liftShowsPrec ia la i = \case
     PArrow c d ->
       showParen (i > arr_prec) $
-        ib (arr_prec + 1) c . showString " -> " . ib (arr_prec + 1) d
+        ia (arr_prec + 1) c . showString " -> " . ia (arr_prec + 1) d
     PForall k t ->
       showParen (i > arr_prec) $
         showString "∀ "
           . showsPrec (arr_prec + 1) k
           . showString ". "
-          . ib (arr_prec + 1) t
-    PSpread c r -> parens (braces c) $ liftShowsPrec2 ib lb ia la i r
+          . ia (arr_prec + 1) t
+    PSpread c r -> parens (braces c) $ ia 0 r
     where
       arr_prec = 6
       braces = \case
@@ -265,53 +238,27 @@ instance Show2 DataF where
         CWith -> ("[", "]")
         COr -> ("(|", "|)")
 
-type DataTerm = Quad TypeF DataF
-
 ------------------------------------- TYPE -------------------------------------
 
-data TypeF n a = TLit
-  { tyPos :: Position,
-    tyPre :: a,
-    tyMul :: MultTerm n
-  }
-  deriving (Generic, Generic1)
-  deriving (Functor, Foldable, Eq1, Show1) via (Ap2 TypeF n)
-  deriving (Eq, Show, Hashable) via (Ap2 TypeF n a)
+data TypeF a = TLit { tyDat :: a, tyMul :: a }
+  deriving (Generic, Generic1, Functor, Foldable, Traversable)
+  deriving (Eq, Show, Hashable) via (Ap TypeF a)
 
-instance Hashable n => Hashable1 (TypeF n)
+instance Hashable1 TypeF
 
-instance Hashable2 TypeF where
-  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \p ->
-    liftHashWithSalt hb s $ first (mkReflected p) x
+instance Eq1 TypeF where
+  liftEq f (TLit d m) (TLit d' m') = f d d' && f m m'
 
-instance Bifunctor TypeF where
-  bimap f g (TLit p q m) = TLit p (g q) (fmap f m)
-
-instance Bifoldable TypeF where
-  bifoldMap f g (TLit _ p m) = g p <> foldMap f m
-
-instance Bitraversable TypeF where
-  bitraverse f g (TLit p q m) = TLit p <$> g q <*> traverse f m
-
-instance Traversable (TypeF n) where
-  traverse = bitraverse pure
-
-instance Eq2 TypeF where
-  liftEq2 f g (TLit p q m) (TLit p' q' m') = p == p' && g q q' && liftEq f m m'
-
-instance Show2 TypeF where
-  liftShowsPrec2 ia la ib _ i (TLit p q m) =
+instance Show1 TypeF where
+  liftShowsPrec ia la i (TLit q m) =
     showParen (i > 0) $
-      showsPrec (app_prec + 1) p
-        . showString " "
-        . ib (app_prec + 1) q
+      showString " "
+        . ia (app_prec + 1) q
         . showString " % "
-        . liftShowsPrec ia la (mod_prec + 1) m
+        . ia (mod_prec + 1) m
     where
       app_prec = 10
       mod_prec = 4
-
-type TypeTerm = Quad DataF TypeF
 
 ------------------------------------ LAMBDA ------------------------------------
 
@@ -389,8 +336,8 @@ instance Show1 LambdaF where
 
 data TermF a
   = TLam (LambdaF a)
-  | TType Position (Join TypeTerm a)
-  | TData Position (Join DataTerm a)
+  | TType Position (TypeF a)
+  | TData Position (DataF a)
   | TRow Position (Join RowTerm a)
   | TMul Position (MultTerm a)
   deriving (Functor, Foldable, Traversable, Generic, Generic1)

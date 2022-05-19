@@ -38,13 +38,16 @@ type KindingResult = CtxResult [ProperKind] KindingErrors
 
 ---------------------------------- ALGORITHM -----------------------------------
 
+checkKind :: Position -> ProperKind -> Term -> KindingResult ()
+checkKind p k t = intoCheck p k $ synthesizeKind t
+
 synthesizeKind :: Term -> KindingResult ProperKind
 synthesizeKind = foldFix $ \case
   TLam t -> case t of
     LVar i -> CtxR $ Ok . (!! i)
     LApp p f x -> do
       (kx, ky) <- f >>= pullArrow p
-      x >>= intoCheck p kx
+      intoCheck p kx x
       pure ky
     LAbs k t -> (k :->:) <$> mapCtx (k :) t
     LSPair p l r ->
@@ -52,52 +55,32 @@ synthesizeKind = foldFix $ \case
     LPair l r -> liftA2 (:**:) l r
     LFst p t -> fst <$> (t >>= pullPair p)
     LSnd p t -> snd <$> (t >>= pullPair p)
-    LDat p t -> (t >>= intoCheck p Type) $> Simple Data
-    LMul p t -> (t >>= intoCheck p Type) $> Mult
-    LFix p k t -> mapCtx (Simple k :) t >>= intoAssert p (Simple k)
+    LDat p t -> intoCheck p Type t $> Simple Data
+    LMul p t -> intoCheck p Type t $> Mult
+    LFix p k t -> intoAssert p (Simple k) $ mapCtx (Simple k :) t
     LMap p f x -> do
       (kx, ky) <- f >>= pullArrow p
-      x >>= intoCheck p (Row kx)
+      intoCheck p (Row kx) x
       pure (Row ky)
-  TMul p m -> synthesizeMultKind p m
-  TRow p (Join x) -> synthesizeRowKind p x
-  TType p (Join x) -> tyiter synthesizeDataKind synthesizeTypeKind x p
-  TData p (Join x) -> tyiter synthesizeTypeKind synthesizeDataKind x p
+  TMul p m -> for_ m (intoCheck p Mult) $> Mult
+  TRow p (Join x) -> do
+    ks <- sequenceA (iterA fold x)
+    case NonEmpty.nub ks of
+      Row k :| [] -> pure (Row k)
+      k :| [] -> failWith $ KMismatch p k ERow
+      ks -> failWith $ KDifferentRows p ks
+    where
+      fold = \case
+        REmpty k -> pure $ pure $ Row k
+        REntry _ v -> pure $ Row <$> v
+        RJoin l r -> l <> r
+  TType p (TLit d m) ->
+    intoCheck p (Simple Data) d *> intoCheck p Mult m $> Type
+  TData p t -> case t of
+    PArrow d c -> intoCheck p Type d *> intoCheck p Type c $> Simple Data
+    PForall k t -> mapCtx (k :) (intoCheck p Type t) $> Simple Data
+    PSpread _ r -> intoCheck p (Row Type) r $> Simple Data
   where
-    tyiter f g = biiter f g . bimap const const
-
-    synthesizeMultKind p m = for_ m (>>= intoCheck p Mult) $> Mult
-
-    synthesizeTypeKind (TLit q d m) _ =
-      (d q >>= intoCheck q (Simple Data))
-        *> synthesizeMultKind q (fmap ($ q) m)
-        $> Type
-
-    synthesizeDataKind t p = case t of
-      PArrow d c ->
-        (d p >>= intoCheck p Type) *> (c p >>= intoCheck p Type) $> Simple Data
-      PForall k t -> mapCtx (k :) (t p >>= intoCheck p Type) $> Simple Data
-      PSpread _ r ->
-        (synthesizeRowKind p (bimap ($ p) ($ p) r) >>= intoCheck p (Row Type))
-          $> Simple Data
-
-    synthesizeRowKind p x = do
-      ks <- sequenceA (iterA fold x)
-      case NonEmpty.nub ks of
-        Row k :| [] -> pure (Row k)
-        k :| [] -> failWith $ KMismatch p k ERow
-        ks -> failWith $ KDifferentRows p ks
-
-    fold = \case
-      REmpty k -> pure $ pure $ Row k
-      REntry _ v -> pure $ Row <$> v
-      RJoin l r -> l <> r
-
-    intoCheck p k k' =
-      if k == k'
-        then pure ()
-        else failWith $ KMismatch p k' $ EKind k
-
     intoAssert p k k' = intoCheck p k k' $> k
 
     pullSimple p = \case
@@ -109,9 +92,15 @@ synthesizeKind = foldFix $ \case
       (k :**: k') -> pure (k, k')
       k' -> failWith $ KMismatch p k' EPair
 
+intoCheck p k mk = do
+  k' <- mk
+  if k == k'
+    then pure ()
+    else failWith $ KMismatch p k' $ EKind k
+
 pullArrow :: Position -> ProperKind -> KindingResult (ProperKind, ProperKind)
 pullArrow p = \case
   (k :->: k') -> pure (k, k')
   k' -> failWith $ KMismatch p k' EOperator
 
-failWith e = CtxR $ const $ Err $ pure e
+failWith = CtxR . const . Err . pure

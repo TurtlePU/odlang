@@ -25,9 +25,7 @@ source-repository head
 
 library
   exposed-modules:
-      Control.Monad.Bifree
       Control.Monad.FreeBi
-      Control.Monad.Quad
       Core.Term
       Core.Type.Equivalence
       Core.Type.Evaluation

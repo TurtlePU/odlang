@@ -3,12 +3,9 @@
 module Core.Type.Kinding where
 
 import Control.Applicative (Applicative (liftA2))
-import Control.Monad.Free (iter)
 import Control.Monad.FreeBi (iterA)
-import Control.Monad.Quad (biiter)
 import Core.Type.Syntax
-import Data.Bifunctor (Bifunctor (bimap))
-import Data.Bifunctor.Join (Join (Join))
+import Data.Bifunctor.Join (Join (..))
 import Data.Fix (foldFix)
 import Data.Foldable (for_)
 import Data.Functor (($>))

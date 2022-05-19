@@ -3,7 +3,7 @@
 module Core.Type.Equivalence where
 
 import Control.Applicative (Alternative ((<|>)), liftA2)
-import Control.Monad.FreeBi (FreeBi (FreeBi), iter)
+import Control.Monad.FreeBi (FreeBi, iter)
 import Core.Type.Syntax
 import Data.Bifunctor (Bifunctor (first))
 import Data.EqBag (EqBag)

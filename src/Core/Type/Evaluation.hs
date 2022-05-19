@@ -80,9 +80,10 @@ runSubstitution :: Substitution -> Term -> KindingResult Term
 runSubstitution (SubWith t) = eval . shift (-1) . replace 0 (shift 1 t)
   where
     replace i t (Fix b) = case b of
-      TData p d -> Fix $ TData p $ case d of
-        PForall k b -> PForall k $ replace (i + 1) t b
-        d -> replace i t <$> d
+      TData p d -> Fix $
+        TData p $ case d of
+          PForall k b -> PForall k $ replace (i + 1) t b
+          d -> replace i t <$> d
       TLam b -> case b of
         LVar j | i == j -> t
         LAbs k b -> Fix $ TLam $ LAbs k $ replace (i + 1) t b

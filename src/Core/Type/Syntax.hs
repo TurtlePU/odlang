@@ -5,9 +5,7 @@
 
 module Core.Type.Syntax where
 
-import Control.Monad.Free (Free, iter)
 import Control.Monad.FreeBi (FreeBi)
-import Control.Monad.Quad (Quad)
 import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
@@ -15,7 +13,7 @@ import Data.Bifunctor.Join (Join (..))
 import Data.Bitraversable (Bitraversable (..))
 import Data.Fix (Fix)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
-import Data.Hashable (Hashable (..))
+import Data.Hashable (Hashable)
 import Data.Hashable.Lifted (Hashable1 (..), Hashable2 (..))
 import Data.Position (Position)
 import Data.Reflection (reify)

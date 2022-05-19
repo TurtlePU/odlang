@@ -4,7 +4,6 @@
 module Data.Position where
 
 import Data.Hashable (Hashable)
-import Data.Result
 import GHC.Generics (Generic)
 
 data Position deriving (Generic)

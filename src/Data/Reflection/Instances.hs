@@ -8,7 +8,7 @@ import Data.Hashable (Hashable (..))
 import Data.Proxy (Proxy (..))
 import Data.Reflection (Reifies (..), reify)
 
-newtype Reflected s a = Reflect a
+newtype Reflected s a = Reflect {unreflect :: a}
 
 mkReflected :: Proxy s -> a -> Reflected s a
 mkReflected _ = Reflect

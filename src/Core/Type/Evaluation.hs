@@ -3,16 +3,19 @@
 module Core.Type.Evaluation where
 
 import Control.Monad ((>=>))
-import Control.Monad.Bifree (Bifree (..), bilift)
+import Control.Monad.Bifree (Bifree (..), biiter, bilift)
 import Control.Monad.Free (Free (..), iterA)
 import Control.Monad.FreeBi (FreeBi (..))
 import Control.Monad.Quad (Quad (..))
 import Core.Type.Kinding (KindingResult, pullArrow, synthesizeKind)
 import Core.Type.Syntax
 import Data.Aps (Ap (..), Ap2 (..))
+import Data.Bifunctor (Bifunctor (second))
 import Data.Bifunctor.Join (Join (..))
+import Data.Bitraversable (bisequence)
 import Data.Fix (Fix (..), foldFix)
 import Data.Position (Position)
+import Data.Result (mapCtx)
 
 eval :: Term -> KindingResult Term
 eval = foldFix $ \case
@@ -26,17 +29,19 @@ eval = foldFix $ \case
     pure $ case t' >>= liftRow of
       FreeBi (Pure t) -> t
       t -> Fix $ TRow p $ Join t
-  TType p t -> do
-    Join (Quad t') <- sequenceA t -- TODO: respect context
+  TType p (Join (Quad t)) -> do
+    t' <- biwalk walkData bisequence t
     pure $ case bilift liftType liftData t' of
       BPure t -> t
       t -> Fix $ TType p $ Join $ Quad t
-  TData p t -> do
-    Join (Quad t') <- sequenceA t -- TODO: respect context
+  TData p (Join (Quad t)) -> do
+    t' <- biwalk bisequence walkData t
     pure $ case bilift liftData liftType t' of
       BPure t -> t
       t -> Fix $ TData p $ Join $ Quad t
-  TLam t -> apply t
+  TLam (LAbs k t) -> Fix . TLam . LAbs k <$> mapCtx (k :) t
+  TLam (LFix p k t) -> Fix . TLam . LFix p k <$> mapCtx (Simple k :) t
+  TLam t -> sequence t >>= apply
   where
     liftMult (Fix t) = case t of
       TMul _ t -> t
@@ -51,7 +56,31 @@ eval = foldFix $ \case
       TRow _ (Join t) -> t
       t -> FreeBi $ Pure $ Fix t
 
-    apply :: LambdaF (KindingResult Term) -> KindingResult Term
+    biwalk ::
+      (Bifunctor f, Bifunctor g, Functor p) =>
+      ( g (p a) (p (Bifree (Ap2 g a) (Ap2 f a) a a)) ->
+        p (g a (Bifree (Ap2 g a) (Ap2 f a) a a))
+      ) ->
+      ( f (p a) (p (Bifree (Ap2 f a) (Ap2 g a) a a)) ->
+        p (f a (Bifree (Ap2 f a) (Ap2 g a) a a))
+      ) ->
+      Bifree (Ap2 g (p a)) (Ap2 f (p a)) (p a) (p a) ->
+      p (Bifree (Ap2 g a) (Ap2 f a) a a)
+    biwalk v w (BPure x) = BPure <$> x
+    biwalk v w (BFree (Ap (Ap2 z))) =
+      BFree . Ap . Ap2 <$> w (second (biwalk w v) z)
+
+    walkData ::
+      DataF
+        (KindingResult Term)
+        (KindingResult (Bifree (Ap2 DataF Term) (Ap2 TypeF Term) Term Term)) ->
+      KindingResult
+        (DataF Term (Bifree (Ap2 DataF Term) (Ap2 TypeF Term) Term Term))
+    walkData = \case
+      PForall k t -> PForall k <$> mapCtx (k :) t
+      d -> bisequence d
+
+    apply :: LambdaF Term -> KindingResult Term
     apply = \case
       LApp _ (Fix (TLam (LAbs _ t))) x -> runSubstitution (SubWith x) t
       LFst _ (Fix (TLam (LSPair _ x _))) -> pure x

@@ -41,7 +41,7 @@ eval = foldFix $ \case
 
     apply :: LambdaF Term -> KindingResult Term
     apply = \case
-      LApp _ (Fix (TLam (LAbs _ t))) x -> runSubstitution (SubWith x) t
+      LApp _ (Fix (TLam (LAbs _ t))) x -> eval $ substitute (SubWith x) t
       LFst _ (Fix (TLam (LSPair _ x _))) -> pure x
       LFst _ (Fix (TLam (LPair x _))) -> pure x
       LSnd _ (Fix (TLam (LSPair _ _ x))) -> pure x
@@ -76,8 +76,8 @@ eval = foldFix $ \case
 
 newtype Substitution = SubWith Term
 
-runSubstitution :: Substitution -> Term -> KindingResult Term
-runSubstitution (SubWith t) = eval . shift (-1) . replace 0 (shift 1 t)
+substitute :: Substitution -> Term -> Term
+substitute (SubWith t) = shift (-1) . replace 0 (shift 1 t)
   where
     replace i t (Fix b) = case b of
       TData p d -> Fix $

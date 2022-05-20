@@ -1,11 +1,13 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Core.Type.Equivalence where
 
 import Control.Applicative (Alternative ((<|>)), liftA2)
+import Control.Monad ((>=>))
 import Control.Monad.FreeBi (FreeBi, iter)
-import Core.Type.Evaluation (Substitution (..), runSubstitution, shift)
-import Core.Type.Kinding (KindingError, KindingResult, pullArrow, synthesizeKind)
+import Core.Type.Evaluation (Substitution (..), eval, shift, substitute)
+import Core.Type.Kinding
 import Core.Type.Syntax
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bifunctor.Join (Join (..))
@@ -141,80 +143,134 @@ data DataVariety
 type EqResult = CtxResult [ProperKind] (NonEmpty EqError)
 
 checkEQ :: Term -> Term -> EqResult ()
-checkEQ l r = CtxR $ \ks -> case runCtx (ks, HashSet.empty) $ impl l r of
-  Err (x : xs) -> Err (x :| xs)
-  Err [] -> error "empty error list"
-  _ -> Ok ()
+checkEQ l = first NonEmpty.fromList . mapCtx (,HashSet.empty) . impl l
   where
     impl :: Term -> Term -> RealEqResult ()
     impl l r =
-      checkAssumptionOr (l, r) $
-        mapCtx (HashSet.insert (l, r) <$>) $
-          checkMapId l r
-            <|> case (unFix l, unFix r) of
-              (TMul p m, TMul p' m') ->
-                checkMultEQ' m m' >>= \case
-                  Just offender -> failWith $ EMultEq p p' offender
-                  Nothing -> pure ()
-              (TRow p (Join r), TRow p' (Join r')) ->
-                checkRowEQ' r r' >>= \case
-                  e : es -> failWith $ ERowEq p p' (e :| es)
-                  [] -> pure ()
-              (TType p (TLit d m), TType p' (TLit d' m')) ->
-                impl d d' *> impl m m'
-              (TData p d, TData p' d') -> case (d, d') of
-                (PArrow d c, PArrow d' c') -> impl d d' *> impl c c'
-                (PForall k t, PForall k' t')
-                  | k == k' -> shiftAssumptions $ impl t t'
-                (PSpread c t, PSpread c' t') | c == c' -> impl t t'
-                (d, d') ->
-                  failWith $ EDataEq p p' (getDataVariety d, getDataVariety d')
-              (TLam (LFix p k t), t') -> unfoldLFix p k t >>= impl (Fix t')
-              (t, TLam (LFix p' k' t')) -> unfoldLFix p' k' t' >>= impl (Fix t)
-              -- TODO: extensional pair equality
-              (TLam t, TLam t') -> case (t, t') of
-                (LVar i, LVar i') | i == i' -> pure ()
-                (LApp _ f x, LApp _ f' x') -> impl f f' *> impl x x'
-                (LAbs k t, LAbs k' t')
-                  | k == k' -> shiftAssumptions $ impl t t'
-                (LSPair _ l r, LSPair _ l' r') -> impl l l' *> impl r r'
-                (LPair l r, LPair l' r') -> impl l l' *> impl r r'
-                (LFst _ t, LFst _ t') -> impl t t'
-                (LSnd _ t, LSnd _ t') -> impl t t'
-                (LDat _ t, LDat _ t') -> impl t t'
-                (LMul _ t, LMul _ t') -> impl t t'
-                (LMap _ f r, LMap _ f' r') -> impl f f' *> impl r r'
-                (t, t') -> failWith $ ETermNeq (Fix $ TLam t, Fix $ TLam t')
-              (t, t') -> failWith $ ETermNeq (Fix t, Fix t')
+      checkAssumption (l, r)
+        <|> mapCtx
+          (HashSet.insert (l, r) <$>)
+          ( unfoldingEq l r
+              <|> structuralEq l r
+              <|> identityEq l r
+              <|> extensionalEq l r
+          )
 
-    checkAssumptionOr (l, r) res = CtxR $ \(ks, as) ->
+    checkAssumption (l, r) = CtxR $ \(_, as) ->
       if HashSet.member (l, r) as || HashSet.member (r, l) as
         then Ok ()
-        else withCtx res (ks, as)
+        else Err []
 
-    checkMapId :: Term -> Term -> RealEqResult ()
-    checkMapId (Fix l) (Fix r) = case (l, r) of
-      (TLam (LMap p f r), r') -> isID p f *> impl r (Fix r')
-      (r, TLam (LMap p f' r')) -> isID p f' *> impl (Fix r) r'
+    unfoldingEq l r = do
+      k <- fromKinding (synthesizeKind l)
+      mGuard (k == Simple Data)
+      (unfoldMuPath l >>= impl r) <|> (unfoldMuPath r >>= impl l)
+
+    unfoldMuPath = substitutePath >=> (fromKinding . eval)
+
+    substitutePath (Fix t) = case t of
+      TLam t -> case t of
+        LFix p k t -> pure $ substituteMu p k t
+        LFst p t -> Fix . TLam . LFst p <$> substitutePath t
+        LSnd p t -> Fix . TLam . LSnd p <$> substitutePath t
+        _ -> emptyErr
       _ -> emptyErr
+
+    identityEq l r = do
+      fromKinding (synthesizeKind l) >>= pullRow
+      case (l, r) of
+        (Fix (TLam (LMap p f l)), r) -> isID p f *> impl l r
+        (l, Fix (TLam (LMap p f r))) -> isID p f *> impl l r
+        _ -> emptyErr
+
+    pullRow = \case
+      Row k -> pure k
+      _ -> emptyErr
+
+    structuralEq (Fix l) (Fix r) = case (l, r) of
+      (TMul lp lm, TMul rp rm) ->
+        checkMultEQ' lm rm >>= \case
+          Just offender -> failWith $ EMultEq lp rp offender
+          Nothing -> pure ()
+      (TRow lp (Join lr), TRow rp (Join rr)) ->
+        checkRowEQ' lr rr >>= \case
+          e : es -> failWith $ ERowEq lp rp (e :| es)
+          [] -> pure ()
+      (TData lp ld, TData rp rd) -> case (ld, rd) of
+        (PArrow ld lc, PArrow rd rc) -> impl ld rd *> impl lc rc
+        (PForall lk lt, PForall rk rt) | lk == rk -> shiftCtx lk $ impl lt rt
+        (PSpread lc lt, PSpread rc rt) | lc == rc -> impl lt rt
+        (ld, rd) ->
+          failWith $ EDataEq lp rp (getDataVariety ld, getDataVariety rd)
+      (TLam ll, TLam rl) -> case (ll, rl) of
+        (LVar li, LVar ri) | li == ri -> pure ()
+        (LApp _ lf lx, LApp _ rf rx) -> impl lf rf *> impl lx rx
+        (LAbs lk lb, LAbs rk rb) | lk == rk -> shiftCtx lk $ impl lb rb
+        (LFst _ lp, LFst _ rp) -> impl lp rp
+        (LSnd _ lp, LSnd _ rp) -> impl lp rp
+        (LDat _ lt, LDat _ rt) -> impl lt rt
+        (LMul _ lt, LMul _ rt) -> impl lt rt
+        (LMap _ lf lr, LMap _ rf rr) -> impl lf rf *> impl lr rr
+        (ll, rl) -> failWith $ ETermNeq (Fix $ TLam ll, Fix $ TLam rl)
+      (l, r) -> failWith $ ETermNeq (Fix l, Fix r)
+
+    extensionalEq l r = do
+      k <- fromKinding (synthesizeKind l)
+      mGuard (not $ isPath l && isPath r)
+      case k of
+        Type -> do
+          (ld, lm) <- tyParts l
+          (rd, rm) <- tyParts r
+          impl ld rd *> impl lm rm
+        Simple (_ :*: _) -> pairEq l r
+        _ :**: _ -> pairEq l r
+        _ -> emptyErr
+
+    pairEq l r = do
+      (lf, ls) <- pairParts l
+      (rf, rs) <- pairParts r
+      impl lf rf *> impl ls rs
+
+    tyParts t =
+      (,)
+        <$> fromKinding (eval $ Fix $ TLam $ LDat mempty t)
+        <*> fromKinding (eval $ Fix $ TLam $ LMul mempty t)
+
+    pairParts p =
+      (,)
+        <$> fromKinding (eval $ Fix $ TLam $ LFst mempty p)
+        <*> fromKinding (eval $ Fix $ TLam $ LSnd mempty p)
+
+    isPath (Fix t) = case t of
+      TType _ _ -> False
+      TLam t -> case t of
+        LVar _ -> True
+        LApp _ f _ -> isPath f
+        LMap _ f _ -> isPath f
+        LFst _ p -> isPath p
+        LSnd _ p -> isPath p
+        LDat _ t -> isPath t
+        LMul _ t -> isPath t
+        _ -> False
+      _ -> True
 
     isID :: Position -> Term -> RealEqResult ()
     isID p f = do
       (kx, ky) <- fromKinding $ synthesizeKind f >>= pullArrow p
-      if kx == ky
-        then impl f $ Fix $ TLam $ LAbs kx $ Fix $ TLam $ LVar 0
-        else emptyErr
+      mGuard (kx == ky)
+      impl f (Fix $ TLam $ LAbs kx $ Fix $ TLam $ LVar 0)
+
+    mGuard b = if b then pure () else emptyErr
 
     emptyErr = CtxR $ const $ Err []
 
-    unfoldLFix p k t =
-      fromKinding $ flip runSubstitution t $ SubWith $ Fix $ TLam $ LFix p k t
+    substituteMu p k t = flip substitute t $ SubWith $ Fix $ TLam $ LFix p k t
 
     fromKinding :: KindingResult a -> RealEqResult a
     fromKinding = mapCtx fst . first (NonEmpty.toList . fmap EKinding)
 
-    shiftAssumptions :: RealEqResult a -> RealEqResult a
-    shiftAssumptions = mapCtx $ second $ HashSet.map $ bimap (shift 1) (shift 1)
+    shiftCtx :: ProperKind -> RealEqResult a -> RealEqResult a
+    shiftCtx k = mapCtx $ bimap (k :) $ HashSet.map $ bimap (shift 1) (shift 1)
 
     checkMultEQ' ::
       MultTerm Term -> MultTerm Term -> RealEqResult (Maybe (Offender Term))

@@ -55,3 +55,6 @@ instance Monoid e => Alternative (CtxResult s e) where
 
 mapCtx :: (s -> s') -> CtxResult s' e a -> CtxResult s e a
 mapCtx f x = CtxR $ withCtx x . f
+
+failWith :: Applicative f => e -> CtxResult s (f e) a
+failWith = CtxR . const . Err . pure

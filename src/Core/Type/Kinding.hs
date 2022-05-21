@@ -99,5 +99,3 @@ pullArrow :: Position -> ProperKind -> KindingResult (ProperKind, ProperKind)
 pullArrow p = \case
   (k :->: k') -> pure (k, k')
   k' -> failWith $ KMismatch p k' EOperator
-
-failWith = CtxR . const . Err . pure

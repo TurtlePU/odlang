@@ -6,7 +6,7 @@ module Core.Type.Equivalence where
 import Control.Applicative (Alternative ((<|>)), liftA2)
 import Control.Monad ((>=>))
 import Control.Monad.FreeBi (FreeBi, iter)
-import Core.Type.Evaluation (Substitution (..), eval, shift, substitute)
+import Core.Type.Evaluation (Substitution (..), eval, shift, substitute, unfoldMuPath)
 import Core.Type.Kinding
 import Core.Type.Syntax
 import Data.Bifunctor (Bifunctor (..))
@@ -26,7 +26,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position)
 import Data.Reflection (reify)
 import Data.Reflection.Instances (Reflected (..), ReifiedEq (..), mkReflected)
-import Data.Result (CtxResult (..), Result (..), mapCtx, runCtx)
+import Data.Result (CtxResult (..), Result (..), failWith, mapCtx, runCtx)
 
 ------------------------------------- MULT -------------------------------------
 
@@ -164,17 +164,9 @@ checkEQ l = first NonEmpty.fromList . mapCtx (,HashSet.empty) . impl l
     unfoldingEq l r = do
       k <- fromKinding (synthesizeKind l)
       mGuard (k == Simple Data)
-      (unfoldMuPath l >>= impl r) <|> (unfoldMuPath r >>= impl l)
+      (unfoldMuPath' l >>= impl r) <|> (unfoldMuPath' r >>= impl l)
 
-    unfoldMuPath = substitutePath >=> (fromKinding . eval)
-
-    substitutePath (Fix t) = case t of
-      TLam t -> case t of
-        LFix p k t -> pure $ substituteMu p k t
-        LFst p t -> Fix . TLam . LFst p <$> substitutePath t
-        LSnd p t -> Fix . TLam . LSnd p <$> substitutePath t
-        _ -> emptyErr
-      _ -> emptyErr
+    unfoldMuPath' = fromKinding . unfoldMuPath
 
     identityEq l r = do
       fromKinding (synthesizeKind l) >>= pullRow
@@ -264,8 +256,6 @@ checkEQ l = first NonEmpty.fromList . mapCtx (,HashSet.empty) . impl l
 
     emptyErr = CtxR $ const $ Err []
 
-    substituteMu p k t = flip substitute t $ SubWith $ Fix $ TLam $ LFix p k t
-
     fromKinding :: KindingResult a -> RealEqResult a
     fromKinding = mapCtx fst . first (NonEmpty.toList . fmap EKinding)
 
@@ -297,8 +287,6 @@ checkEQ l = first NonEmpty.fromList . mapCtx (,HashSet.empty) . impl l
       PArrow _ _ -> VArrow
       PForall k _ -> VForall k
       PSpread c _ -> VSpread c
-
-    failWith = CtxR . const . Err . pure
 
 type Assumptions = HashSet (Term, Term)
 

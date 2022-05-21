@@ -2,6 +2,7 @@
 
 module Core.Type where
 
+import Control.Applicative (Applicative (liftA2))
 import Control.Monad ((>=>))
 import qualified Core.Type.Equivalence as Equivalence
 import qualified Core.Type.Evaluation as Evaluation
@@ -11,6 +12,7 @@ import Data.Bifunctor (Bifunctor (first))
 import Data.Fix (Fix (..))
 import qualified Data.HashSet as HashSet
 import Data.List.NonEmpty (NonEmpty)
+import Data.Maybe (fromMaybe)
 import Data.Position (Position)
 import Data.Result (CtxResult (..), Result (..), failWith)
 
@@ -127,4 +129,8 @@ pullSpread p =
     Fix (TType _ (TLit (Fix (TData _ (PSpread c r))) _)) -> pure (c, r)
     _ -> failWith $ PNotThe p VSpread
 
-layer t = first (PKind <$>) (Evaluation.eval t >>= Evaluation.unfoldMuPath)
+layer =
+  first (PKind <$>)
+    . ( Evaluation.eval
+          >=> liftA2 ($) (fromMaybe . pure) Equivalence.unfoldMuPath
+      )

@@ -12,17 +12,6 @@ import Data.Fix (Fix (..), foldFix)
 import Data.Functor ((<&>))
 import Data.Result (mapCtx)
 
-unfoldMuPath :: Term -> KindingResult Term
-unfoldMuPath = eval . substitutePath
-  where
-    substitutePath (Fix t) = case t of
-      TLam t -> case t of
-        LFix p k t -> flip substitute t $ SubWith $ Fix $ TLam $ LFix p k t
-        LFst p t -> Fix $ TLam $ LFst p $ substitutePath t
-        LSnd p t -> Fix $ TLam $ LSnd p $ substitutePath t
-        t -> Fix $ TLam t
-      t -> Fix t
-
 eval :: Term -> KindingResult Term
 eval = foldFix $ \case
   TMul p t ->

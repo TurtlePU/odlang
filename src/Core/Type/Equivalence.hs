@@ -6,7 +6,7 @@ module Core.Type.Equivalence where
 import Control.Applicative (Alternative ((<|>)), liftA2)
 import Control.Monad ((>=>))
 import Control.Monad.FreeBi (FreeBi, iter)
-import Core.Type.Evaluation (Substitution (..), eval, shift, substitute, unfoldMuPath)
+import Core.Type.Evaluation
 import Core.Type.Kinding
 import Core.Type.Syntax
 import Data.Bifunctor (Bifunctor (..))
@@ -166,7 +166,7 @@ checkEQ l = first NonEmpty.fromList . mapCtx (,HashSet.empty) . impl l
       mGuard (k == Simple Data)
       (unfoldMuPath' l >>= impl r) <|> (unfoldMuPath' r >>= impl l)
 
-    unfoldMuPath' = fromKinding . unfoldMuPath
+    unfoldMuPath' = maybe emptyErr fromKinding . unfoldMuPath
 
     identityEq l r = do
       fromKinding (synthesizeKind l) >>= pullRow
@@ -291,3 +291,17 @@ checkEQ l = first NonEmpty.fromList . mapCtx (,HashSet.empty) . impl l
 type Assumptions = HashSet (Term, Term)
 
 type RealEqResult = CtxResult ([ProperKind], Assumptions) [EqError]
+
+--------------------------------- MU UNFOLDING ---------------------------------
+
+unfoldMuPath :: Term -> Maybe (KindingResult Term)
+unfoldMuPath = fmap eval . substitutePath
+  where
+    substitutePath (Fix t) = case t of
+      TLam t -> case t of
+        LFix p k t ->
+          Just $ flip substitute t $ SubWith $ Fix $ TLam $ LFix p k t
+        LFst p t -> Fix . TLam . LFst p <$> substitutePath t
+        LSnd p t -> Fix . TLam . LSnd p <$> substitutePath t
+        _ -> Nothing
+      t -> Nothing

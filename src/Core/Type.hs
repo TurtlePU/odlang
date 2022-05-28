@@ -9,7 +9,7 @@ import qualified Core.Type.Evaluation as Evaluation
 import qualified Core.Type.Kinding as Kinding
 import Core.Type.Syntax
 import Data.Bifunctor (Bifunctor (first))
-import Data.Fix (Fix (..))
+import Data.Fix (Fix (..), foldFix)
 import qualified Data.HashSet as HashSet
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (fromMaybe)
@@ -57,25 +57,16 @@ checkTypeEQ p l r = do
     fromKinding = first (EKind <$>)
 
 isContractive :: Type -> Bool
-isContractive = areGuarded HashSet.empty
+isContractive t = areGuarded t HashSet.empty
   where
-    areGuarded s (Fix t) = case t of
+    areGuarded = foldFix $ \case
       TLam t -> case t of
-        LVar i -> not $ HashSet.member i s
-        LApp _ f x -> areGuarded s f && areGuarded s x
-        LAbs _ t -> areGuarded (HashSet.map succ s) t
-        LSPair _ l r -> areGuarded s l && areGuarded s r
-        LPair l r -> areGuarded s l && areGuarded s r
-        LFst _ p -> areGuarded s p
-        LSnd _ p -> areGuarded s p
-        LDat _ p -> areGuarded s p
-        LMul _ p -> areGuarded s p
-        LFix _ _ t -> areGuarded (HashSet.insert 0 $ HashSet.map succ s) t
-        LMap _ f r -> areGuarded s f && areGuarded s r
-      TType _ (TLit d m) -> areGuarded s d && areGuarded s m
-      TData _ _ -> True
-      TRow _ _ -> True
-      TMul _ _ -> True
+        LVar i -> not . HashSet.member i
+        LAbs _ t -> t . HashSet.map succ
+        LFix _ _ t -> t . HashSet.insert 0 . HashSet.map succ
+        t -> and . sequence t
+      TType _ t -> and . sequence t
+      _ -> const True
 
 ----------------------------- MULTIPLICITY FRONTEND ----------------------------
 

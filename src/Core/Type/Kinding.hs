@@ -22,12 +22,12 @@ data Expected
   | EPair
   | ERow
   | ESimple
-  deriving (Show)
+  deriving (Show, Eq)
 
 data KindingError
   = KMismatch Position ProperKind Expected
   | KDifferentRows Position (NonEmpty ProperKind)
-  deriving (Show)
+  deriving (Show, Eq)
 
 type KindingErrors = NonEmpty KindingError
 

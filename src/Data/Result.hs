@@ -6,7 +6,7 @@ import Control.Applicative (Alternative (..), liftA2)
 import Control.Monad ((>=>))
 import Data.Bifunctor (Bifunctor (..))
 
-data Result e a = Err e | Ok a deriving (Functor)
+data Result e a = Err e | Ok a deriving (Functor, Show, Eq)
 
 result :: (a -> c) -> (b -> c) -> Result a b -> c
 result f _ (Err x) = f x

@@ -54,3 +54,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - odlang
+    - tasty
+    - tasty-hunit
+    - HUnit

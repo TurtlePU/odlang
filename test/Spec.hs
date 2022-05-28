@@ -1,2 +1,4 @@
-main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+import Core (core)
+import Test.Tasty (defaultMain, testGroup)
+
+main = defaultMain $ testGroup "Tests" [core]

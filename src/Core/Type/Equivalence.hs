@@ -39,16 +39,24 @@ checkMultEQ l r =
   where
     eqVia f = checkBoolEQ (first f l) (first f r)
 
+checkMultLE :: Eq a => MultTerm a -> MultTerm a -> Maybe (Offender a)
+checkMultLE l r =
+  (fmap (`MultLit` False) <$> leVia noWeakening)
+    <|> (fmap (MultLit False) <$> leVia noContraction)
+  where
+    leVia f = checkBoolLE (evalM mkDNF $ first f l) (evalM mkCNF $ first f r)
+
 checkBoolEQ ::
   Eq a =>
   FreeBi MultF Bool a ->
   FreeBi MultF Bool a ->
   Maybe (IndexedBag a Bool)
 checkBoolEQ l r =
-  checkBoolLE (eval mkDNF l) (eval mkCNF r)
-    <|> checkBoolLE (eval mkDNF r) (eval mkCNF l)
-  where
-    eval f = iter interpT . fmap f
+  checkBoolLE (evalM mkDNF l) (evalM mkCNF r)
+    <|> checkBoolLE (evalM mkDNF r) (evalM mkCNF l)
+
+evalM :: Boolean b => (a -> b) -> FreeBi MultF Bool a -> b
+evalM f = iter interpT . fmap f
 
 checkBoolLE :: Eq a => DNF a -> CNF a -> Maybe (IndexedBag a Bool)
 checkBoolLE (MkDNF dnf) (MkCNF cnf) = asum (liftA2 findSub dnf cnf)

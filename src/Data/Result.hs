@@ -58,3 +58,6 @@ mapCtx f x = CtxR $ withCtx x . f
 
 failWith :: Applicative f => e -> CtxResult s (f e) a
 failWith = CtxR . const . Err . pure
+
+mapErrs :: Functor f => (e -> e') -> CtxResult s (f e) a -> CtxResult s (f e') a
+mapErrs = first . fmap

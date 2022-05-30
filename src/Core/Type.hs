@@ -3,18 +3,27 @@
 module Core.Type where
 
 import Control.Applicative (Applicative (liftA2))
-import Control.Monad ((>=>))
+import Control.Arrow ((<<<))
+import Control.Monad ((<=<), (>=>))
+import Control.Monad.Free (Free (..))
+import Control.Monad.FreeBi (FreeBi (..))
 import qualified Core.Type.Equivalence as Equivalence
 import qualified Core.Type.Evaluation as Evaluation
 import qualified Core.Type.Kinding as Kinding
 import Core.Type.Syntax
+import Data.Aps (Ap2 (..))
 import Data.Bifunctor (Bifunctor (first))
+import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
+import Data.Functor ((<&>))
 import qualified Data.HashSet as HashSet
+import Data.IndexedBag (IndexedBag)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (fromMaybe)
 import Data.Position (Position)
-import Data.Result (CtxResult (..), Result (..), failWith)
+import Data.Reflection (reify)
+import Data.Reflection.Instances (Reflected (..), ReifiedEq (..), mkReflected)
+import Data.Result (CtxResult (..), Result (..), failWith, mapErrs, runCtx)
 
 ------------------------------- KINDING FRONTEND -------------------------------
 
@@ -30,31 +39,11 @@ checkKind = Kinding.checkKind
 isType :: Position -> TL -> KindingResult ()
 isType p = checkKind p Type
 
----------------------------- TYPE EQUALITY FRONTEND ----------------------------
+------------------------------- CONTRACTIVENESS --------------------------------
 
-type Type = Term
-
-data TypeEqError
-  = EEq Equivalence.EqError
-  | EKind Kinding.KindingError
-  | EContr Position
-
-type TypeEqResult = CtxResult [Kind] (NonEmpty TypeEqError)
-
-checkTypeEQ :: Position -> Type -> Type -> TypeEqResult ()
-checkTypeEQ p l r = do
-  checkWF p l
-  checkWF p r
-  l' <- eval l
-  r' <- eval r
-  first (EEq <$>) (Equivalence.checkEQ l' r')
-  where
-    checkWF p t =
-      if isContractive t
-        then fromKinding $ isType p t
-        else failWith $ EContr p
-    eval = fromKinding . Evaluation.eval
-    fromKinding = first (EKind <$>)
+checkContractiveness :: Position -> Type -> CtxResult a (NonEmpty Position) ()
+checkContractiveness p t =
+  if isContractive t then pure () else failWith p
 
 isContractive :: Type -> Bool
 isContractive t = areGuarded t HashSet.empty
@@ -65,14 +54,71 @@ isContractive t = areGuarded t HashSet.empty
         LAbs _ t -> t . HashSet.map succ
         LFix _ _ t -> t . HashSet.insert 0 . HashSet.map succ
         t -> and . sequence t
-      TType _ t -> and . sequence t
-      _ -> const True
+      TMul _ (FreeBi (Pure t)) -> t
+      TRow _ (Join (FreeBi (Pure t))) -> t
+      t -> const $ and $ sequence t HashSet.empty
+
+---------------------------- TYPE EQUALITY FRONTEND ----------------------------
+
+type Type = Term
+
+data TypeEqError
+  = TEq Equivalence.EqError
+  | TKind Kinding.KindingError
+  | TContr Position
+
+type TypeEqResult = CtxResult [Kind] (NonEmpty TypeEqError)
+
+checkTypeEQ :: Position -> Type -> Type -> TypeEqResult ()
+checkTypeEQ p l r = do
+  checkWF p l *> checkWF p r
+  (l', r') <- liftA2 (,) (eval l) (eval r)
+  mapErrs TEq (Equivalence.checkEQ l' r')
+  where
+    checkWF p t =
+      mapErrs TContr (checkContractiveness p t)
+        *> mapErrs TKind (isType p t)
+    eval = mapErrs TKind . Evaluation.eval
 
 ----------------------------- MULTIPLICITY FRONTEND ----------------------------
 
 type Mult = Term
 
--- TODO: check <=, literal from number
+data MultLeError
+  = MKind Kinding.KindingError
+  | MLe (Equivalence.Offender TL)
+  | MContr Position
+
+type MultLeResult = CtxResult [Kind] (NonEmpty MultLeError)
+
+checkMultLE :: Position -> Mult -> Mult -> MultLeResult ()
+checkMultLE p m n = do
+  checkWF p m *> checkWF p n
+  (m', n') <- liftA2 (,) (pullMult m) (pullMult n)
+  mapErrs MKind (checkLE' m' n') >>= \case
+    Just offender -> failWith $ MLe offender
+    Nothing -> pure ()
+  where
+    checkWF p m =
+      mapErrs MContr (checkContractiveness p m)
+        *> mapErrs MKind (checkKind p Mult m)
+    pullMult m =
+      mapErrs MKind (Evaluation.eval m) <&> \case
+        Fix (TMul _ m) -> m
+        t -> FreeBi (Pure t)
+    checkLE' m n = CtxR $ \s -> Ok $
+      reify (ReifiedEq $ eq s) $ \p ->
+        first unreflect
+          <$> Equivalence.checkMultLE (reflect p m) (reflect p n)
+    reflect = fmap . mkReflected
+    eq s l r = case runCtx s (Equivalence.checkEQ l r) of
+      Ok _ -> True
+      Err _ -> False
+
+multAdmitting :: Int -> Position -> Mult
+multAdmitting n p =
+  Fix . TMul p . FreeBi . Free . Ap2 . MLit $
+    MultLit {noWeakening = n > 0, noContraction = n < 2}
 
 --------------------------------- ROW FRONTEND ---------------------------------
 
@@ -82,14 +128,19 @@ type Row = Term
 
 --------------------------- CONSTRUCTORS AND GETTERS ---------------------------
 
+type Data = Term
+
+mktype :: Position -> DataF TL -> Mult -> Type
+mktype p = curry $ Fix . TType p . uncurry TLit . first (Fix . TData p)
+
 arrow :: Position -> Type -> Type -> Mult -> Type
-arrow p d c m = Fix $ TType p $ flip TLit m $ Fix $ TData p $ PArrow d c
+arrow p d c = mktype p (PArrow d c)
 
 forall :: Position -> Kind -> Type -> Mult -> Type
-forall p k t m = Fix $ TType p $ flip TLit m $ Fix $ TData p $ PForall k t
+forall p k = mktype p . PForall k
 
 spread :: Position -> Connective -> Row -> Mult -> Type
-spread p c r m = Fix $ TType p $ flip TLit m $ Fix $ TData p $ PSpread c r
+spread p c = mktype p . PSpread c
 
 data PullError
   = PKind Kinding.KindingError
@@ -120,8 +171,8 @@ pullSpread p =
     Fix (TType _ (TLit (Fix (TData _ (PSpread c r))) _)) -> pure (c, r)
     _ -> failWith $ PNotThe p VSpread
 
+layer :: Term -> PullResult Term
 layer =
-  first (PKind <$>)
-    . ( Evaluation.eval
-          >=> liftA2 ($) (fromMaybe . pure) Equivalence.unfoldMuPath
-      )
+  mapErrs PKind
+    <<< liftA2 fromMaybe pure Equivalence.unfoldMuPath
+    <=< Evaluation.eval

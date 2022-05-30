@@ -85,7 +85,7 @@ instance Eq a => Boolean (DNF a) where
 
 ------------------------------------ ROWS --------------------------------------
 
-data RowEqError = EVars | EKeys | EUnder EntryKey
+data RowEqError = EVars | EKeys | EUnder EntryKey deriving (Eq, Show)
 
 checkRowEQ :: (Eq t, Eq r) => RowTerm t r -> RowTerm t r -> [RowEqError]
 checkRowEQ l r =
@@ -134,11 +134,13 @@ data EqError
   | EDataEq Position Position (DataVariety, DataVariety)
   | ETermNeq (Term, Term)
   | EKinding KindingError
+  deriving (Eq, Show)
 
 data DataVariety
   = VArrow
   | VForall ProperKind
   | VSpread Connective
+  deriving (Eq, Show)
 
 type EqResult = CtxResult [ProperKind] (NonEmpty EqError)
 

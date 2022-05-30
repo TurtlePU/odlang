@@ -1,23 +1,17 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Data.Position where
 
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
 
-data Position deriving (Generic)
+data PositionEntry = PEntry {line :: Int, column :: Int}
+  deriving (Generic, Eq, Show)
 
-instance Hashable Position
+instance Hashable PositionEntry
 
-instance Eq Position where
-  (==) x = case x of
-
-instance Show Position where
-  show x = case x of
-
-instance Semigroup Position where
-  (<>) x = case x of
-
-instance Monoid Position where
-  mempty = undefined
+newtype Position = Pos [PositionEntry]
+  deriving newtype (Hashable, Semigroup, Monoid)
+  deriving (Eq, Show)

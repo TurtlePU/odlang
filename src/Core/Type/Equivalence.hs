@@ -33,6 +33,7 @@ import Data.Result (CtxResult (..), Result (..), failWith, mapCtx, runCtx)
 type Offender a = IndexedBag a MultLit
 
 checkMultEQ :: Eq a => MultTerm a -> MultTerm a -> Maybe (Offender a)
+-- ^ Different variables are assumed to be independent
 checkMultEQ l r =
   (fmap (`MultLit` False) <$> eqVia noWeakening)
     <|> (fmap (MultLit False) <$> eqVia noContraction)
@@ -40,6 +41,7 @@ checkMultEQ l r =
     eqVia f = checkBoolEQ (first f l) (first f r)
 
 checkMultLE :: Eq a => MultTerm a -> MultTerm a -> Maybe (Offender a)
+-- ^ Different variables are assumed to be independent
 checkMultLE l r =
   (fmap (`MultLit` False) <$> leVia noWeakening)
     <|> (fmap (MultLit False) <$> leVia noContraction)
@@ -96,6 +98,7 @@ instance Eq a => Boolean (DNF a) where
 data RowEqError = EVars | EKeys | EUnder EntryKey deriving (Eq, Show)
 
 checkRowEQ :: (Eq t, Eq r) => RowTerm t r -> RowTerm t r -> [RowEqError]
+-- ^ Different variables are assumed to be independent
 checkRowEQ l r =
   let (lLit, lVar) = intoRow l
       (rLit, rVar) = intoRow r
@@ -153,6 +156,7 @@ data DataVariety
 type EqResult = CtxResult [ProperKind] (NonEmpty EqError)
 
 checkEQ :: Term -> Term -> EqResult ()
+-- ^ Terms are assumed to be in a beta-normal form
 checkEQ l = first NonEmpty.fromList . mapCtx (,HashSet.empty) . impl l
   where
     impl :: Term -> Term -> RealEqResult ()

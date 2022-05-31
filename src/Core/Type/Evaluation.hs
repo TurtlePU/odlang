@@ -51,7 +51,6 @@ eval = foldFix $ \case
       LMap p f (Fix (TLam (LMap q g x))) -> do
         h <- compose p f g
         apply $ LMap (p <> q) h x
-      -- TODO: OpMapID rule
       LMap p f (Fix (TRow q (Join (FreeBi (Free (Ap2 (REmpty _))))))) -> do
         (_, ky) <- synthesizeKind f >>= pullArrow p
         fromRow (p <> q) $ REmpty ky

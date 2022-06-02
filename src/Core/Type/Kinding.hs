@@ -5,10 +5,12 @@ module Core.Type.Kinding where
 import Control.Applicative (Applicative (liftA2))
 import Control.Monad.FreeBi (iterA)
 import Core.Type.Syntax
+import Data.Bifunctor.Biff (Biff (Biff))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (foldFix)
 import Data.Foldable (for_)
 import Data.Functor (($>))
+import Data.Functor.Identity (Identity (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position)
@@ -61,16 +63,16 @@ synthesizeKind = foldFix $ \case
       pure (Row ky)
     LRnd p t -> t >>= pullRow p
   TMul p m -> for_ m (intoCheck p Mult) $> Mult
-  TRow p (Join x) -> do
-    ks <- sequenceA (iterA fold x)
+  TRow p (Join (Biff x)) -> do
+    ks <- sequenceA (iterA fold $ fmap runIdentity x)
     case NonEmpty.nub ks of
       Row k :| [] -> pure (Row k)
       k :| [] -> failWith $ KMismatch p k ERow
       ks -> failWith $ KDifferentRows p ks
     where
-      fold = \case
-        REmpty k -> pure $ pure $ Row k
-        REntry _ v -> pure $ Row <$> v
+      fold t = case t of
+        REmpty k -> pure . pure $ Row k
+        REntry (_, v) -> pure $ Row <$> v
         RJoin l r -> l <> r
   TType p (TLit d m) ->
     intoCheck p (Simple Data) d *> intoCheck p Mult m $> Type
@@ -90,15 +92,18 @@ synthesizeKind = foldFix $ \case
       (k :**: k') -> pure (k, k')
       k' -> failWith $ KMismatch p k' EPair
 
-    pullRow p = \case
-      Row k -> pure k
-      k' -> failWith $ KMismatch p k' ERow
-
+intoCheck ::
+  Position -> ProperKind -> KindingResult ProperKind -> KindingResult ()
 intoCheck p k mk = do
   k' <- mk
   if k == k'
     then pure ()
     else failWith $ KMismatch p k' $ EKind k
+
+pullRow :: Position -> ProperKind -> KindingResult ProperKind
+pullRow p = \case
+  Row k -> pure k
+  k' -> failWith $ KMismatch p k' ERow
 
 pullArrow :: Position -> ProperKind -> KindingResult (ProperKind, ProperKind)
 pullArrow p = \case

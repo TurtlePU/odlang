@@ -4,18 +4,20 @@
 module Core.Type.Equivalence where
 
 import Control.Applicative (Alternative ((<|>)), liftA2)
-import Control.Category ((>>>))
-import Control.Monad ((>=>))
-import Control.Monad.FreeBi (FreeBi, iter)
+import Control.Monad.FreeBi (FreeBi (FreeBi, runFreeBi), iter)
 import Core.Type.Evaluation
 import Core.Type.Kinding
 import Core.Type.Syntax
+import Data.Bifoldable (Bifoldable (bifoldMap))
 import Data.Bifunctor (Bifunctor (..))
+import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.EqBag (EqBag)
 import qualified Data.EqBag as EqBag
 import Data.Fix (Fix (..))
 import Data.Foldable (asum)
+import Data.Functor.Identity (Identity (..))
+import Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.HashMultiMap (HashMultiMap (..))
 import qualified Data.HashMultiMap as HashMultiMap
@@ -105,28 +107,19 @@ checkRowEQ l r =
       (rLit, rVar) = intoRow r
       litNeqs = HashMap.intersectionWith (/=) lLit rLit
    in [EKeys | HashMap.keysSet lLit /= HashMap.keysSet rLit]
-        ++ HashMap.foldMapWithKey mkUnder litNeqs
+        ++ HashMap.foldMapWithKey (\label neq -> [ EUnder label | neq ]) litNeqs
         ++ [EVars | lVar /= rVar]
   where
-    intoRow = fromTerm >>> \(MkRow (Multi lit) var) -> (lit, var)
-    mkUnder l = \case
-      True -> [EUnder l]
-      False -> []
+    intoRow =
+      (\(MkRow (Multi lit) var) -> (lit, var)) . bifoldMap entry var . runBiff
+    entry (k, v) =
+      MkRow (HashMultiMap.singleton k $ EqBag.singleton v) EqBag.empty
+    var = MkRow HashMultiMap.empty . EqBag.singleton . runIdentity
 
 data Row t r = MkRow
   { rowLit :: HashMultiMap EntryKey (EqBag t),
     rowVar :: EqBag r
   }
-
-fromTerm :: (Eq t, Eq r) => RowTerm t r -> Row t r
-fromTerm = iter fold . fmap fromVar
-  where
-    fromVar = MkRow HashMultiMap.empty . EqBag.singleton
-    entry k = HashMultiMap.singleton k . EqBag.singleton
-    fold = \case
-      REmpty _ -> mempty
-      REntry k v -> MkRow (entry k v) EqBag.empty
-      RJoin l r -> l <> r
 
 instance (Eq t, Eq r) => Semigroup (Row t r) where
   MkRow l v <> MkRow l' v' = MkRow (l <> l') (v <> v')

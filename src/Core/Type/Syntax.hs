@@ -9,10 +9,12 @@ import Control.Monad.FreeBi (FreeBi)
 import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
+import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Bitraversable (Bitraversable (..))
 import Data.Fix (Fix)
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
+import Data.Functor.Identity (Identity)
 import Data.Hashable (Hashable)
 import Data.Hashable.Lifted (Hashable1 (..), Hashable2 (..))
 import Data.Position (Position)
@@ -136,11 +138,9 @@ interpT = \case
 
 ------------------------------------- ROWS -------------------------------------
 
-type EntryKey = String
-
 data RowF e r
   = REmpty ProperKind
-  | REntry EntryKey e
+  | REntry e
   | RJoin r r
   deriving (Generic, Generic1)
   deriving (Functor, Foldable, Eq1, Show1) via (Ap2 RowF e)
@@ -155,19 +155,19 @@ instance Hashable2 RowF where
 instance Bifunctor RowF where
   bimap f g = \case
     REmpty k -> REmpty k
-    REntry k v -> REntry k (f v)
+    REntry v -> REntry (f v)
     RJoin l r -> RJoin (g l) (g r)
 
 instance Bifoldable RowF where
   bifoldMap f g = \case
     REmpty _ -> mempty
-    REntry _ v -> f v
+    REntry v -> f v
     RJoin l r -> g l <> g r
 
 instance Bitraversable RowF where
   bitraverse f g = \case
     REmpty k -> pure (REmpty k)
-    REntry k v -> REntry k <$> f v
+    REntry v -> REntry <$> f v
     RJoin l r -> RJoin <$> g l <*> g r
 
 instance Traversable (RowF e) where
@@ -176,16 +176,14 @@ instance Traversable (RowF e) where
 instance Eq2 RowF where
   liftEq2 f g l r = case (l, r) of
     (REmpty k, REmpty k') -> k == k'
-    (REntry k v, REntry k' v') -> k == k' && f v v'
+    (REntry v, REntry v') -> f v v'
     (RJoin l r, RJoin l' r') -> g l l' && g r r'
     _ -> False
 
 instance Show2 RowF where
   liftShowsPrec2 ia _ ib _ i = \case
     REmpty k -> appConst showsPrec "{/}" i k
-    REntry k v ->
-      showParen (i > colon_prec) $
-        showString k . showString ": " . ia (colon_prec + 1) v
+    REntry v -> showParen (i > colon_prec) $ ia (colon_prec + 1) v
     RJoin l r ->
       showParen (i > join_prec) $
         ib join_prec l . showString " \\/ " . ib join_prec r
@@ -193,7 +191,9 @@ instance Show2 RowF where
       colon_prec = 4
       join_prec = 5
 
-type RowTerm = FreeBi RowF
+type EntryKey = String
+
+type RowTerm = Biff (FreeBi RowF) ((,) EntryKey) Identity
 
 ------------------------------------- DATA -------------------------------------
 
@@ -348,6 +348,10 @@ data TermF a
 
 instance Hashable2 f => Hashable1 (Join f) where
   liftHashWithSalt ha s (Join x) = liftHashWithSalt2 ha ha s x
+
+instance (Hashable2 p, Hashable1 f, Hashable1 g) => Hashable2 (Biff p f g) where
+  liftHashWithSalt2 ha hb s (Biff t) =
+    liftHashWithSalt2 (liftHashWithSalt ha) (liftHashWithSalt hb) s t
 
 instance Hashable1 TermF
 

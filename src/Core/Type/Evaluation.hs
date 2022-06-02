@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Core.Type.Evaluation where
 
@@ -10,15 +11,17 @@ import Control.Monad.FreeBi (FreeBi (..))
 import Core.Type.Kinding (KindingResult, pullArrow, synthesizeKind)
 import Core.Type.Syntax
 import Data.Aps (Ap2 (..))
+import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
 import Data.Functor ((<&>))
 import Data.Result (mapCtx)
+import Data.Functor.Identity (Identity(Identity))
 
 eval :: Term -> KindingResult Term
 eval = foldFix $ \case
-  TMul p t -> lowerMult p . (>>= liftMult) <$> sequence t
-  TRow p t -> fmap (lowerRow p <<< liftRow <=< runJoin) (sequence t)
+  TMul p t -> fmap (lowerMult p <<< liftMult <=< id) (sequence t)
+  TRow p t -> fmap (lowerRow p <<< liftRow <=< runBiff <<< runJoin) (sequence t)
   TType p t -> Fix . TType p <$> sequence t
   TData p t ->
     Fix . TData p <$> case t of
@@ -37,13 +40,9 @@ eval = foldFix $ \case
       FreeBi (Pure t) -> t
       t -> Fix (TMul p t)
 
-    liftRow = \case
-      Fix (TRow _ (Join t)) -> t
-      t -> FreeBi (Pure t)
-
     lowerRow p = \case
-      FreeBi (Pure t) -> t
-      t -> Fix (TRow p (Join t))
+      FreeBi (Pure (Identity t)) -> t
+      t -> Fix (TRow p (Join (Biff t)))
 
     apply :: LambdaF Term -> KindingResult Term
     apply = \case
@@ -57,20 +56,20 @@ eval = foldFix $ \case
       LMap p f (Fix (TLam (LMap q g x))) -> do
         h <- compose p f g
         apply $ LMap (p <> q) h x
-      LMap p f (Fix (TRow q (Join (FreeBi (Free (Ap2 r)))))) ->
-        Fix . TRow (p <> q) . Join . FreeBi . Free . Ap2 <$> case r of
+      LMap p f (Fix (TRow q (Join (Biff (FreeBi (Free (Ap2 r))))))) ->
+        Fix . TRow (p <> q) . Join . Biff . FreeBi . Free . Ap2 <$> case r of
           REmpty _ -> REmpty . snd <$> (synthesizeKind f >>= pullArrow p)
-          REntry k v -> REntry k <$> apply (LApp p f v)
+          REntry (k, v) -> REntry . (k,) <$> apply (LApp p f v)
           RJoin l r -> liftA2 RJoin (recur l) (recur r)
             where
-              recur = fmap (runFreeBi . liftRow) . apply . wrapRow
+              recur = fmap (runFreeBi . liftRow . Identity) . apply . wrapRow
               wrapRow = LMap p f . lowerRow q . FreeBi
       LRnd p (Fix (TLam (LMap q f r))) -> apply (LRnd p r) >>= apply . LApp q f
-      LRnd p (Fix (TRow q (Join (FreeBi (Free (Ap2 r)))))) -> case r of
+      LRnd p (Fix (TRow q (Join (Biff (FreeBi (Free (Ap2 r))))))) -> case r of
         REmpty k -> pure . Fix . TLam . LRnd p . Fix $ wrapKind k
           where
-            wrapKind = TRow q . Join . FreeBi . Free . Ap2 . REmpty
-        REntry _ v -> pure v
+            wrapKind = TRow q . Join . Biff . FreeBi . Free . Ap2 . REmpty
+        REntry (_, v) -> pure v
         RJoin l r -> liftA2 unifier (recur l) (recur r)
           where
             recur = apply . LRnd p . lowerRow q . FreeBi
@@ -82,6 +81,10 @@ eval = foldFix $ \case
       g' <- apply . LApp p (shift 1 g) . Fix . TLam $ LVar 0
       f' <- apply $ LApp p (shift 1 f) g'
       pure . Fix . TLam $ LAbs kx f'
+
+liftRow = \case
+  Identity (Fix (TRow _ (Join (Biff t)))) -> t
+  t -> FreeBi (Pure t)
 
 newtype Substitution = SubWith Term
 

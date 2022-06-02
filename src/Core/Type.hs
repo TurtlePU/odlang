@@ -12,10 +12,15 @@ import qualified Core.Type.Evaluation as Evaluation
 import qualified Core.Type.Kinding as Kinding
 import Core.Type.Syntax
 import Data.Aps (Ap2 (..))
+import Data.Bifoldable (Bifoldable (bifoldMap))
 import Data.Bifunctor (Bifunctor (first))
+import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
 import Data.Functor ((<&>))
+import Data.Functor.Identity (Identity (..))
+import Data.HashMultiMap (HashMultiMap)
+import qualified Data.HashMultiMap as HashMultiMap
 import qualified Data.HashSet as HashSet
 import Data.IndexedBag (IndexedBag)
 import Data.List.NonEmpty (NonEmpty)
@@ -55,12 +60,12 @@ isContractive t = areGuarded t HashSet.empty
         LFix _ _ t -> t . HashSet.insert 0 . HashSet.map succ
         t -> and . sequence t
       TMul _ (FreeBi (Pure t)) -> t
-      TRow _ (Join (FreeBi (Pure t))) -> t
-      t -> const $ and $ sequence t HashSet.empty
+      TRow _ (Join (Biff (FreeBi (Pure (Identity t))))) -> t
+      t -> const . and $ sequence t HashSet.empty
 
 ---------------------------- TYPE EQUALITY FRONTEND ----------------------------
 
-type Type = Term
+type Type = TL
 
 data TypeEqError
   = TEq Equivalence.EqError
@@ -82,7 +87,7 @@ checkTypeEQ p l r = do
 
 ----------------------------- MULTIPLICITY FRONTEND ----------------------------
 
-type Mult = Term
+type Mult = TL
 
 data MultLeError
   = MKind Kinding.KindingError
@@ -122,13 +127,38 @@ multAdmitting n p =
 
 --------------------------------- ROW FRONTEND ---------------------------------
 
-type Row = Term
+type Row = TL
 
--- TODO: rounding, key access
+data RowRepr = MkRepr
+  { reLit :: HashMultiMap EntryKey (NonEmpty TL),
+    reVar :: [TL]
+  }
+
+instance Semigroup RowRepr where
+  MkRepr l v <> MkRepr l' v' = MkRepr (l <> l') (v <> v')
+
+instance Monoid RowRepr where
+  mempty = MkRepr mempty mempty
+
+data ReprError
+  = RKind Kinding.KindingError
+  | RContr Position
+
+type ReprResult = CtxResult [Kind] (NonEmpty ReprError)
+
+rowRepr :: Position -> Row -> ReprResult RowRepr
+rowRepr p r = do
+  mapErrs RContr (checkContractiveness p r)
+    *> mapErrs RKind (Kinding.synthesizeKind r >>= Kinding.pullRow p)
+  bifoldMap entry var . Evaluation.liftRow . Identity
+    <$> mapErrs RKind (Evaluation.eval r)
+  where
+    var = MkRepr mempty . pure . runIdentity
+    entry (k, v) = flip MkRepr mempty $ HashMultiMap.singleton k $ pure v
 
 --------------------------- CONSTRUCTORS AND GETTERS ---------------------------
 
-type Data = Term
+type Data = TL
 
 mktype :: Position -> DataF TL -> Mult -> Type
 mktype p = curry $ Fix . TType p . uncurry TLit . first (Fix . TData p)

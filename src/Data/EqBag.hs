@@ -3,11 +3,11 @@
 
 module Data.EqBag where
 
+import Data.IndexedBag (IndexedBag (IBag))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Prelude hiding (filter)
 import qualified Prelude
-import Data.IndexedBag (IndexedBag (IBag))
 
 newtype EqBag a = MkBag {unBag :: [NonEmpty a]}
 

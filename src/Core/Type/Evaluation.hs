@@ -3,6 +3,8 @@
 module Core.Type.Evaluation where
 
 import Control.Applicative (Applicative (liftA2))
+import Control.Category ((<<<))
+import Control.Monad ((<=<))
 import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (FreeBi (..))
 import Core.Type.Kinding (KindingResult, pullArrow, synthesizeKind)
@@ -15,14 +17,8 @@ import Data.Result (mapCtx)
 
 eval :: Term -> KindingResult Term
 eval = foldFix $ \case
-  TMul p t ->
-    sequence t <&> (>>= liftMult) <&> \case
-      FreeBi (Pure t) -> t
-      t -> Fix $ TMul p t
-  TRow p t ->
-    sequence t <&> runJoin <&> (>>= liftRow) <&> \case
-      FreeBi (Pure t) -> t
-      t -> Fix $ TRow p $ Join t
+  TMul p t -> lowerMult p . (>>= liftMult) <$> sequence t
+  TRow p t -> fmap (lowerRow p <<< liftRow <=< runJoin) (sequence t)
   TType p t -> Fix . TType p <$> sequence t
   TData p t ->
     Fix . TData p <$> case t of
@@ -33,12 +29,21 @@ eval = foldFix $ \case
     LFix p k t -> Fix . TLam . LFix p k <$> mapCtx (Simple k :) t
     t -> sequence t >>= apply
   where
-    liftMult (Fix t) = case t of
-      TMul _ t -> t
-      t -> FreeBi $ Pure $ Fix t
-    liftRow (Fix t) = case t of
-      TRow _ (Join t) -> t
-      t -> FreeBi $ Pure $ Fix t
+    liftMult = \case
+      Fix (TMul _ t) -> t
+      t -> FreeBi (Pure t)
+
+    lowerMult p = \case
+      FreeBi (Pure t) -> t
+      t -> Fix (TMul p t)
+
+    liftRow = \case
+      Fix (TRow _ (Join t)) -> t
+      t -> FreeBi (Pure t)
+
+    lowerRow p = \case
+      FreeBi (Pure t) -> t
+      t -> Fix (TRow p (Join t))
 
     apply :: LambdaF Term -> KindingResult Term
     apply = \case
@@ -59,7 +64,7 @@ eval = foldFix $ \case
           RJoin l r -> liftA2 RJoin (recur l) (recur r)
             where
               recur = fmap (runFreeBi . liftRow) . apply . wrapRow
-              wrapRow = LMap p f . Fix . TRow q . Join . FreeBi
+              wrapRow = LMap p f . lowerRow q . FreeBi
       LRnd p (Fix (TLam (LMap q f r))) -> apply (LRnd p r) >>= apply . LApp q f
       LRnd p (Fix (TRow q (Join (FreeBi (Free (Ap2 r)))))) -> case r of
         REmpty k -> pure . Fix . TLam . LRnd p . Fix $ wrapKind k
@@ -68,15 +73,15 @@ eval = foldFix $ \case
         REntry _ v -> pure v
         RJoin l r -> liftA2 unifier (recur l) (recur r)
           where
-            recur = apply . LRnd p . Fix . TRow q . Join . FreeBi
+            recur = apply . LRnd p . lowerRow q . FreeBi
             unifier _ _ = error "most-precise-unifier is not defined"
-      t -> pure $ Fix $ TLam t
+      t -> pure . Fix $ TLam t
 
     compose p f g = do
       (kx, _) <- synthesizeKind g >>= pullArrow p
-      g' <- apply $ LApp p (shift 1 g) $ Fix $ TLam $ LVar 0
+      g' <- apply . LApp p (shift 1 g) . Fix . TLam $ LVar 0
       f' <- apply $ LApp p (shift 1 f) g'
-      pure $ Fix $ TLam $ LAbs kx f'
+      pure . Fix . TLam $ LAbs kx f'
 
 newtype Substitution = SubWith Term
 
@@ -84,15 +89,14 @@ substitute :: Substitution -> Term -> Term
 substitute (SubWith t) = shift (-1) . replace 0 (shift 1 t)
   where
     replace i t (Fix b) = case b of
-      TData p d -> Fix $
-        TData p $ case d of
-          PForall k b -> PForall k $ replace (i + 1) t b
-          d -> replace i t <$> d
+      TData p d -> Fix . TData p $ case d of
+        PForall k b -> PForall k $ replace (i + 1) t b
+        d -> replace i t <$> d
       TLam b -> case b of
         LVar j | i == j -> t
-        LAbs k b -> Fix $ TLam $ LAbs k $ replace (i + 1) t b
-        LFix p k b -> Fix $ TLam $ LFix p k $ replace (i + 1) t b
-        b -> Fix $ TLam $ replace i t <$> b
+        LAbs k b -> Fix . TLam . LAbs k $ replace (i + 1) t b
+        LFix p k b -> Fix . TLam . LFix p k $ replace (i + 1) t b
+        b -> Fix . TLam $ replace i t <$> b
       b -> Fix $ replace i t <$> b
 
 shift :: Int -> Term -> Term

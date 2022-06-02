@@ -15,8 +15,8 @@ import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
 import Data.Functor ((<&>))
+import Data.Functor.Identity (Identity (Identity))
 import Data.Result (mapCtx)
-import Data.Functor.Identity (Identity(Identity))
 
 eval :: Term -> KindingResult Term
 eval = foldFix $ \case
@@ -32,10 +32,6 @@ eval = foldFix $ \case
     LFix p k t -> Fix . TLam . LFix p k <$> mapCtx (Simple k :) t
     t -> sequence t >>= apply
   where
-    liftMult = \case
-      Fix (TMul _ t) -> t
-      t -> FreeBi (Pure t)
-
     lowerMult p = \case
       FreeBi (Pure t) -> t
       t -> Fix (TMul p t)
@@ -81,6 +77,10 @@ eval = foldFix $ \case
       g' <- apply . LApp p (shift 1 g) . Fix . TLam $ LVar 0
       f' <- apply $ LApp p (shift 1 f) g'
       pure . Fix . TLam $ LAbs kx f'
+
+liftMult = \case
+  Fix (TMul _ t) -> t
+  t -> FreeBi (Pure t)
 
 liftRow = \case
   Identity (Fix (TRow _ (Join (Biff t)))) -> t

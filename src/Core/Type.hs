@@ -17,13 +17,12 @@ import Data.Bifunctor (Bifunctor (first))
 import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
-import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (..))
-import Data.HashMultiMap (HashMultiMap)
+import Data.HashMap.Strict ((!?))
+import Data.HashMultiMap (HashMultiMap (..))
 import qualified Data.HashMultiMap as HashMultiMap
 import qualified Data.HashSet as HashSet
-import Data.IndexedBag (IndexedBag)
-import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Maybe (fromMaybe)
 import Data.Position (Position)
 import Data.Reflection (reify)
@@ -101,16 +100,13 @@ checkMultLE p m n = do
   checkWF p m *> checkWF p n
   (m', n') <- liftA2 (,) (pullMult m) (pullMult n)
   mapErrs MKind (checkLE' m' n') >>= \case
-    Just offender -> failWith $ MLe offender
+    Just offender -> failWith (MLe offender)
     Nothing -> pure ()
   where
     checkWF p m =
       mapErrs MContr (checkContractiveness p m)
         *> mapErrs MKind (checkKind p Mult m)
-    pullMult m =
-      mapErrs MKind (Evaluation.eval m) <&> \case
-        Fix (TMul _ m) -> m
-        t -> FreeBi (Pure t)
+    pullMult m = Evaluation.liftMult <$> mapErrs MKind (Evaluation.eval m)
     checkLE' m n = CtxR $ \s -> Ok $
       reify (ReifiedEq $ eq s) $ \p ->
         first unreflect
@@ -154,7 +150,26 @@ rowRepr p r = do
     <$> mapErrs RKind (Evaluation.eval r)
   where
     var = MkRepr mempty . pure . runIdentity
-    entry (k, v) = flip MkRepr mempty $ HashMultiMap.singleton k $ pure v
+    entry (k, v) = flip MkRepr mempty . HashMultiMap.singleton k $ pure v
+
+data RowKey = KLit EntryKey | KRest
+
+data KeyError
+  = KKind Kinding.KindingError
+  | KMissing Position RowKey
+  | KAmbiguous Position RowKey
+
+type KeyResult = CtxResult [Kind] (NonEmpty KeyError)
+
+getEntry :: Position -> RowRepr -> RowKey -> KeyResult TL
+getEntry p (MkRepr (Multi l) _) (KLit k) = case l !? k of
+  Just (x :| []) -> pure x
+  Just _ -> failWith . KAmbiguous p $ KLit k
+  Nothing -> failWith . KMissing p $ KLit k
+getEntry p (MkRepr _ v) KRest = case v of
+  [x] -> mapErrs KKind . Evaluation.eval . Fix . TLam $ LRnd p x
+  [] -> failWith (KMissing p KRest)
+  _ -> failWith (KAmbiguous p KRest)
 
 --------------------------- CONSTRUCTORS AND GETTERS ---------------------------
 
@@ -187,19 +202,19 @@ pullArrow :: Position -> Type -> PullResult (Type, Type)
 pullArrow p =
   layer >=> \case
     Fix (TType _ (TLit (Fix (TData _ (PArrow d c))) _)) -> pure (d, c)
-    _ -> failWith $ PNotThe p VArrow
+    _ -> failWith (PNotThe p VArrow)
 
 pullForall :: Position -> Type -> PullResult (Kind, Type)
 pullForall p =
   layer >=> \case
     Fix (TType _ (TLit (Fix (TData _ (PForall k t))) _)) -> pure (k, t)
-    _ -> failWith $ PNotThe p VForall
+    _ -> failWith (PNotThe p VForall)
 
 pullSpread :: Position -> Type -> PullResult (Connective, Row)
 pullSpread p =
   layer >=> \case
     Fix (TType _ (TLit (Fix (TData _ (PSpread c r))) _)) -> pure (c, r)
-    _ -> failWith $ PNotThe p VSpread
+    _ -> failWith (PNotThe p VSpread)
 
 layer :: Term -> PullResult Term
 layer =

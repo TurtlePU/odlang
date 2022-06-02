@@ -2,6 +2,7 @@
 
 module Core.Type.Evaluation where
 
+import Control.Applicative (Applicative (liftA2))
 import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (FreeBi (..))
 import Core.Type.Kinding (KindingResult, pullArrow, synthesizeKind)
@@ -51,18 +52,24 @@ eval = foldFix $ \case
       LMap p f (Fix (TLam (LMap q g x))) -> do
         h <- compose p f g
         apply $ LMap (p <> q) h x
-      LMap p f (Fix (TRow q (Join (FreeBi (Free (Ap2 (REmpty _))))))) -> do
-        (_, ky) <- synthesizeKind f >>= pullArrow p
-        fromRow (p <> q) $ REmpty ky
-      LMap p f (Fix (TRow q (Join (FreeBi (Free (Ap2 (REntry k v))))))) -> do
-        v' <- apply $ LApp p f v
-        fromRow (p <> q) $ REntry k v'
-      LMap p f (Fix (TRow q (Join (FreeBi (Free (Ap2 (RJoin l r))))))) -> do
-        l' <- apply $ LMap p f $ wrapRow q l
-        r' <- apply $ LMap p f $ wrapRow q r
-        fromRow (p <> q) $
-          RJoin (runFreeBi $ liftRow l') (runFreeBi $ liftRow r')
-      -- TODO: rounding operational semantics
+      LMap p f (Fix (TRow q (Join (FreeBi (Free (Ap2 r)))))) ->
+        Fix . TRow (p <> q) . Join . FreeBi . Free . Ap2 <$> case r of
+          REmpty _ -> REmpty . snd <$> (synthesizeKind f >>= pullArrow p)
+          REntry k v -> REntry k <$> apply (LApp p f v)
+          RJoin l r -> liftA2 RJoin (recur l) (recur r)
+            where
+              recur = fmap (runFreeBi . liftRow) . apply . wrapRow
+              wrapRow = LMap p f . Fix . TRow q . Join . FreeBi
+      LRnd p (Fix (TLam (LMap q f r))) -> apply (LRnd p r) >>= apply . LApp q f
+      LRnd p (Fix (TRow q (Join (FreeBi (Free (Ap2 r)))))) -> case r of
+        REmpty k -> pure . Fix . TLam . LRnd p . Fix $ wrapKind k
+          where
+            wrapKind = TRow q . Join . FreeBi . Free . Ap2 . REmpty
+        REntry _ v -> pure v
+        RJoin l r -> liftA2 unifier (recur l) (recur r)
+          where
+            recur = apply . LRnd p . Fix . TRow q . Join . FreeBi
+            unifier _ _ = error "most-precise-unifier is not defined"
       t -> pure $ Fix $ TLam t
 
     compose p f g = do
@@ -70,9 +77,6 @@ eval = foldFix $ \case
       g' <- apply $ LApp p (shift 1 g) $ Fix $ TLam $ LVar 0
       f' <- apply $ LApp p (shift 1 f) g'
       pure $ Fix $ TLam $ LAbs kx f'
-
-    wrapRow p = Fix . TRow p . Join . FreeBi
-    fromRow p = pure . wrapRow p . Free . Ap2
 
 newtype Substitution = SubWith Term
 

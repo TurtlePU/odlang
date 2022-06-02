@@ -59,6 +59,7 @@ synthesizeKind = foldFix $ \case
       (kx, ky) <- f >>= pullArrow p
       intoCheck p (Row kx) x
       pure (Row ky)
+    LRnd p t -> t >>= pullRow p
   TMul p m -> for_ m (intoCheck p Mult) $> Mult
   TRow p (Join x) -> do
     ks <- sequenceA (iterA fold x)
@@ -88,6 +89,10 @@ synthesizeKind = foldFix $ \case
       Simple (k :*: k') -> pure (Simple k, Simple k')
       (k :**: k') -> pure (k, k')
       k' -> failWith $ KMismatch p k' EPair
+
+    pullRow p = \case
+      Row k -> pure k
+      k' -> failWith $ KMismatch p k' ERow
 
 intoCheck p k mk = do
   k' <- mk

@@ -238,7 +238,7 @@ instance Show1 DataF where
 
 ------------------------------------- TYPE -------------------------------------
 
-data TypeF a = TLit { tyDat :: a, tyMul :: a }
+data TypeF a = TLit {tyDat :: a, tyMul :: a}
   deriving (Generic, Generic1, Functor, Foldable, Traversable)
   deriving (Eq, Show, Hashable) via (Ap TypeF a)
 
@@ -272,6 +272,7 @@ data LambdaF a
   | LMul Position a
   | LFix Position SimpleKind a
   | LMap Position a a
+  | LRnd Position a
   deriving (Functor, Foldable, Traversable, Generic, Generic1)
   deriving (Eq, Show, Hashable) via (Ap LambdaF a)
 
@@ -290,6 +291,7 @@ instance Eq1 LambdaF where
     (LMul p t, LMul q u) -> p == q && f t u
     (LFix p k t, LFix q l u) -> p == q && k == l && f t u
     (LMap p g x, LMap q h y) -> p == q && f g h && f x y
+    (LRnd p t, LRnd q u) -> p == q && f t u
     _ -> False
 
 instance Show1 LambdaF where
@@ -324,6 +326,9 @@ instance Show1 LambdaF where
           . ia (map_prec + 1) f
           . showString " @ "
           . ia map_prec x
+    LRnd p t ->
+      showParen (i > app_prec) $
+        showsPrec (app_prec + 1) p . parens (" ⌊", "⌋") (ia abs_prec t)
     where
       app_prec = 10
       abs_prec = 0

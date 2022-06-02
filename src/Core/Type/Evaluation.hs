@@ -62,6 +62,7 @@ eval = foldFix $ \case
         r' <- apply $ LMap p f $ wrapRow q r
         fromRow (p <> q) $
           RJoin (runFreeBi $ liftRow l') (runFreeBi $ liftRow r')
+      -- TODO: rounding operational semantics
       t -> pure $ Fix $ TLam t
 
     compose p f g = do

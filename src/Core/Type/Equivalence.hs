@@ -157,6 +157,7 @@ type EqResult = CtxResult [ProperKind] (NonEmpty EqError)
 
 checkEQ :: Term -> Term -> EqResult ()
 -- ^ Terms are assumed to be in a beta-normal form
+-- ^ TODO: how equivalence interacts with rounding? Can it be in a path?
 checkEQ l = first NonEmpty.fromList . mapCtx (,HashSet.empty) . impl l
   where
     impl :: Term -> Term -> RealEqResult ()

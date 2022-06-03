@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Control.Monad.FreeBi
+      Control.Monad.Result
       Core.Term
       Core.Type
       Core.Type.Equivalence
@@ -38,7 +39,6 @@ library
       Data.Functor.Ap
       Data.Position
       Data.Reflection.Instances
-      Data.Result
       Lib
   other-modules:
       Paths_odlang

@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 
-module Data.Result where
+module Control.Monad.Result where
 
 import Control.Applicative (Alternative (..), liftA2)
 import Control.Monad.Reader (ReaderT (..), mapReaderT, withReaderT)

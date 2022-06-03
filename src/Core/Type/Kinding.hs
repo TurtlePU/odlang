@@ -5,6 +5,7 @@ module Core.Type.Kinding where
 import Control.Applicative (Applicative (liftA2))
 import Control.Monad.FreeBi (iterA)
 import Control.Monad.Reader (ReaderT (..))
+import Control.Monad.Result (Result (..), failWith, mapCtx)
 import Core.Type.Result (TypeResult)
 import Core.Type.Syntax
 import Data.Bifunctor.Biff (Biff (Biff))
@@ -16,7 +17,6 @@ import Data.Functor.Identity (Identity (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position)
-import Data.Result
 
 data Expected
   = EKind ProperKind

@@ -8,6 +8,7 @@ import Control.Category ((<<<))
 import Control.Monad ((<=<))
 import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (FreeBi (..))
+import Control.Monad.Result (mapCtx)
 import Core.Type.Kinding (KindingResult, pullArrow, synthesizeKind)
 import Core.Type.Syntax
 import Data.Bifunctor.Ap2 (Ap2 (..))
@@ -16,7 +17,6 @@ import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
 import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (Identity))
-import Data.Result (mapCtx)
 
 eval :: Term -> KindingResult Term
 eval = foldFix $ \case

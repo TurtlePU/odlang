@@ -8,6 +8,7 @@ import Control.Monad ((<=<), (>=>))
 import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (FreeBi (..))
 import Control.Monad.Reader (ReaderT (..))
+import Control.Monad.Result (CtxResult, Result (..), failWith, mapErrs, runCtx)
 import qualified Core.Type.Equivalence as Equivalence
 import qualified Core.Type.Evaluation as Evaluation
 import qualified Core.Type.Kinding as Kinding
@@ -28,7 +29,6 @@ import Data.Maybe (fromMaybe)
 import Data.Position (Position)
 import Data.Reflection (reify)
 import Data.Reflection.Instances (Reflected (..), ReifiedEq (..), mkReflected)
-import Data.Result (CtxResult, Result (..), failWith, mapErrs, runCtx)
 
 ------------------------------- KINDING FRONTEND -------------------------------
 

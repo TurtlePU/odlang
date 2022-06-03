@@ -7,6 +7,7 @@ import Algebra.Lattice hiding (Join)
 import Control.Applicative (Alternative ((<|>)), liftA2)
 import Control.Monad.FreeBi (FreeBi (FreeBi, runFreeBi), iter)
 import Control.Monad.Reader (ReaderT (ReaderT))
+import Control.Monad.Result
 import Core.Type.Evaluation
 import Core.Type.Kinding
 import Core.Type.Result (TypeResult)
@@ -30,7 +31,6 @@ import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position)
 import Data.Reflection (reify)
 import Data.Reflection.Instances (Reflected (..), ReifiedEq (..), mkReflected)
-import Data.Result (CtxResult, Result (..), failWith, mapCtx, mapErr, runCtx)
 
 ------------------------------------- MULT -------------------------------------
 

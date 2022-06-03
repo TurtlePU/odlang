@@ -21,14 +21,15 @@ description:         Please see the README on GitHub at <https://github.com/Turt
 
 dependencies:
 - base >= 4.7 && < 5
+- array
 - hashable
 - unordered-containers
 - monoidal-containers
 - free
-- reflection
 - data-fix
 - bifunctors
-- array
+- lattices
+- reflection
 
 library:
   source-dirs: src

@@ -49,6 +49,7 @@ library
     , data-fix
     , free
     , hashable
+    , lattices
     , monoidal-containers
     , reflection
     , unordered-containers
@@ -68,6 +69,7 @@ executable odlang-exe
     , data-fix
     , free
     , hashable
+    , lattices
     , monoidal-containers
     , odlang
     , reflection
@@ -91,6 +93,7 @@ test-suite odlang-test
     , data-fix
     , free
     , hashable
+    , lattices
     , monoidal-containers
     , odlang
     , reflection

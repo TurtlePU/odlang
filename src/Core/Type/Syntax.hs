@@ -5,7 +5,8 @@
 
 module Core.Type.Syntax where
 
-import Control.Monad.FreeBi (FreeBi)
+import Algebra.Lattice (BoundedLattice, Lattice (..), fromBool)
+import Control.Monad.FreeBi (FreeBi, iter)
 import Data.Aps (Ap (..), Ap2 (..))
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
@@ -109,32 +110,13 @@ instance Hashable MultLit
 
 type MultTerm = FreeBi MultF MultLit
 
---------------------------------- BOOLEAN CLASS --------------------------------
-
-class Boolean a where
-  join :: a -> a -> a
-  meet :: a -> a -> a
-
-  true :: a
-  true = fromBool True
-
-  false :: a
-  false = fromBool False
-
-  fromBool :: Bool -> a
-  fromBool True = true
-  fromBool False = false
-
-instance Boolean Bool where
-  join = (||)
-  meet = (&&)
-  fromBool = id
-
-interpT :: Boolean b => MultF Bool b -> b
-interpT = \case
-  MLit x -> fromBool x
-  MJoin l r -> l `join` r
-  MMeet l r -> l `meet` r
+evalM :: BoundedLattice b => (a -> b) -> FreeBi MultF Bool a -> b
+evalM f = iter interpT . fmap f
+  where
+    interpT = \case
+      MLit x -> fromBool x
+      MJoin l r -> l \/ r
+      MMeet l r -> l /\ r
 
 ------------------------------------- ROWS -------------------------------------
 

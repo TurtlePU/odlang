@@ -3,6 +3,7 @@
 
 module Core.Type.Equivalence where
 
+import Algebra.Lattice hiding (Join)
 import Control.Applicative (Alternative ((<|>)), liftA2)
 import Control.Monad.FreeBi (FreeBi (FreeBi, runFreeBi), iter)
 import Core.Type.Evaluation
@@ -58,9 +59,6 @@ checkBoolEQ l r =
   checkBoolLE (evalM mkDNF l) (evalM mkCNF r)
     <|> checkBoolLE (evalM mkDNF r) (evalM mkCNF l)
 
-evalM :: Boolean b => (a -> b) -> FreeBi MultF Bool a -> b
-evalM f = iter interpT . fmap f
-
 checkBoolLE :: Eq a => DNF a -> CNF a -> Maybe [(a, Bool)]
 checkBoolLE (MkDNF dnf) (MkCNF cnf) = asum (liftA2 findSub dnf cnf)
   where
@@ -77,22 +75,30 @@ newtype CNF a = MkCNF (NormalForm a)
 mkCNF :: a -> CNF a
 mkCNF = MkCNF . pure . EqBag.singleton
 
-instance Eq a => Boolean (CNF a) where
-  join (MkCNF l) (MkCNF r) = MkCNF (liftA2 (<>) l r)
-  meet (MkCNF l) (MkCNF r) = MkCNF (l <> r)
-  true = MkCNF []
-  false = MkCNF [mempty]
+instance Eq a => Lattice (CNF a) where
+  MkCNF l \/ MkCNF r = MkCNF (liftA2 (<>) l r)
+  MkCNF l /\ MkCNF r = MkCNF (l <> r)
+
+instance Eq a => BoundedJoinSemiLattice (CNF a) where
+  bottom = MkCNF [mempty]
+
+instance Eq a => BoundedMeetSemiLattice (CNF a) where
+  top = MkCNF []
 
 newtype DNF a = MkDNF (NormalForm a)
 
 mkDNF :: a -> DNF a
 mkDNF = MkDNF . pure . EqBag.singleton
 
-instance Eq a => Boolean (DNF a) where
-  join (MkDNF l) (MkDNF r) = MkDNF (l <> r)
-  meet (MkDNF l) (MkDNF r) = MkDNF (liftA2 (<>) l r)
-  true = MkDNF [mempty]
-  false = MkDNF []
+instance Eq a => Lattice (DNF a) where
+  MkDNF l \/ MkDNF r = MkDNF (l <> r)
+  MkDNF l /\ MkDNF r = MkDNF (liftA2 (<>) l r)
+
+instance Eq a => BoundedJoinSemiLattice (DNF a) where
+  bottom = MkDNF []
+
+instance Eq a => BoundedMeetSemiLattice (DNF a) where
+  top = MkDNF [mempty]
 
 ------------------------------------ ROWS --------------------------------------
 

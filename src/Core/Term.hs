@@ -1,10 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Core.Term where
 
 import Core.Type
 import Data.Array.ST (MArray (newArray), readArray, runSTArray, writeArray)
 import Data.Array.Unboxed (Array)
+import Data.Bifunctor (Bifunctor (..))
 import Data.Either (partitionEithers)
 import Data.Foldable (for_)
 
@@ -93,3 +95,22 @@ data TermF tled term
         casesSplit :: Split2,
         cases :: RowBag (Refinement, term)
       }
+
+instance Bifunctor TermF where
+  bimap f g = \case
+    TVar -> TVar
+    TAbs {..} ->
+      TAbs {argTy = f argTy, absBody = g absBody, absMult = f absMult, ..}
+    TApp {..} -> TApp {appFun = g appFun, appArg = g appArg, ..}
+    TGen {..} -> TGen {genBody = g genBody, genMult = f genMult, ..}
+    TInst {..} -> TInst {instFun = g instFun, instArg = f instArg}
+    TAndI {..} ->
+      TAndI {andBag = fmap (second g) andBag, andMult = f andMult, ..}
+    TAndE {..} -> TAndE {letArg = g letArg, letBody = g letBody, ..}
+    TWithI {..} ->
+      TWithI {withBag = fmap (second $ second g) withBag, withMult = f withMult}
+    TWithE {..} -> TWithE {punArg = g punArg, ..}
+    TOrI {..} ->
+      TOrI {orValue = g orValue, orRow = f orRow, orMult = f orMult, ..}
+    TOrE {..} ->
+      TOrE {casesArg = g casesArg, cases = fmap (second $ second g) cases, ..}

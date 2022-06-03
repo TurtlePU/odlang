@@ -29,6 +29,7 @@ dependencies:
 - reflection
 - data-fix
 - bifunctors
+- array
 
 library:
   source-dirs: src

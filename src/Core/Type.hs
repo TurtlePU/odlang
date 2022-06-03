@@ -18,11 +18,10 @@ import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
 import Data.Functor.Identity (Identity (..))
-import Data.HashMap.Strict ((!?))
-import Data.HashMultiMap (HashMultiMap (..))
-import qualified Data.HashMultiMap as HashMultiMap
+import Data.HashMap.Monoidal (MonoidalHashMap)
+import qualified Data.HashMap.Monoidal as MonoidalHashMap
 import qualified Data.HashSet as HashSet
-import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (fromMaybe)
 import Data.Position (Position)
 import Data.Reflection (reify)
@@ -126,7 +125,7 @@ multAdmitting n p =
 type Row = TL
 
 data RowRepr = MkRepr
-  { reLit :: HashMultiMap EntryKey (NonEmpty TL),
+  { reLit :: MonoidalHashMap EntryKey (NonEmpty TL),
     reVar :: [TL]
   }
 
@@ -150,7 +149,7 @@ rowRepr p r = do
     <$> mapErrs RKind (Evaluation.eval r)
   where
     var = MkRepr mempty . pure . runIdentity
-    entry (k, v) = flip MkRepr mempty . HashMultiMap.singleton k $ pure v
+    entry (k, v) = flip MkRepr mempty . MonoidalHashMap.singleton k $ pure v
 
 data RowKey = KLit EntryKey | KRest
 
@@ -161,7 +160,7 @@ data KeyError
 type KeyResult = CtxResult [Kind] (NonEmpty KeyError)
 
 getEntry :: Position -> RowRepr -> RowKey -> KeyResult (Maybe TL)
-getEntry p (MkRepr (Multi l) _) (KLit k) = case l !? k of
+getEntry p (MkRepr l _) (KLit k) = case MonoidalHashMap.lookup k l of
   Just (x :| []) -> pure (Just x)
   Just _ -> failWith . KAmbiguous p $ KLit k
   Nothing -> pure Nothing

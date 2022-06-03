@@ -34,7 +34,6 @@ library
       Core.Type.Syntax
       Data.Aps
       Data.EqBag
-      Data.HashMultiMap
       Data.IndexedBag
       Data.Position
       Data.Reflection.Instances
@@ -51,6 +50,7 @@ library
     , data-fix
     , free
     , hashable
+    , monoidal-containers
     , reflection
     , unordered-containers
   default-language: Haskell2010
@@ -69,6 +69,7 @@ executable odlang-exe
     , data-fix
     , free
     , hashable
+    , monoidal-containers
     , odlang
     , reflection
     , unordered-containers
@@ -91,6 +92,7 @@ test-suite odlang-test
     , data-fix
     , free
     , hashable
+    , monoidal-containers
     , odlang
     , reflection
     , tasty

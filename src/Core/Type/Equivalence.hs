@@ -17,10 +17,9 @@ import qualified Data.EqBag as EqBag
 import Data.Fix (Fix (..))
 import Data.Foldable (asum)
 import Data.Functor.Identity (Identity (..))
-import Data.HashMap.Lazy (HashMap)
+import Data.HashMap.Monoidal (MonoidalHashMap (..))
+import qualified Data.HashMap.Monoidal as MonoidalHashMap
 import qualified Data.HashMap.Strict as HashMap
-import Data.HashMultiMap (HashMultiMap (..))
-import qualified Data.HashMultiMap as HashMultiMap
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.IndexedBag (IndexedBag)
@@ -107,17 +106,19 @@ checkRowEQ l r =
       (rLit, rVar) = intoRow r
       litNeqs = HashMap.intersectionWith (/=) lLit rLit
    in [EKeys | HashMap.keysSet lLit /= HashMap.keysSet rLit]
-        ++ HashMap.foldMapWithKey (\label neq -> [ EUnder label | neq ]) litNeqs
+        ++ HashMap.foldMapWithKey (\label neq -> [EUnder label | neq]) litNeqs
         ++ [EVars | lVar /= rVar]
   where
     intoRow =
-      (\(MkRow (Multi lit) var) -> (lit, var)) . bifoldMap entry var . runBiff
+      (\(MkRow lit var) -> (getMonoidalHashMap lit, var))
+        . bifoldMap entry var
+        . runBiff
     entry (k, v) =
-      MkRow (HashMultiMap.singleton k $ EqBag.singleton v) EqBag.empty
-    var = MkRow HashMultiMap.empty . EqBag.singleton . runIdentity
+      MkRow (MonoidalHashMap.singleton k $ EqBag.singleton v) EqBag.empty
+    var = MkRow mempty . EqBag.singleton . runIdentity
 
 data Row t r = MkRow
-  { rowLit :: HashMultiMap EntryKey (EqBag t),
+  { rowLit :: MonoidalHashMap EntryKey (EqBag t),
     rowVar :: EqBag r
   }
 

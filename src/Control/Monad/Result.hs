@@ -1,8 +1,12 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Control.Monad.Result where
 
 import Control.Applicative (Alternative (..), liftA2)
+import Control.Monad.Except (MonadError (..))
 import Control.Monad.Reader (ReaderT (..), mapReaderT, withReaderT)
 import Data.Bifunctor (Bifunctor (..))
 
@@ -27,6 +31,12 @@ instance Semigroup e => Monad (Result e) where
   Err e >>= f = Err e
   Ok x >>= f = f x
 
+instance Semigroup e => MonadError e (Result e) where
+  throwError = Err
+  catchError = \case
+    Err e -> ($ e)
+    r -> const r
+
 instance Monoid e => Alternative (Result e) where
   empty = Err mempty
 
@@ -42,8 +52,8 @@ runCtx = flip runReaderT
 mapCtx :: (s -> s') -> CtxResult s' f e a -> CtxResult s f e a
 mapCtx = withReaderT
 
-failWith :: Applicative f => e -> CtxResult s f e a
-failWith = ReaderT . const . Err . pure
+failWith :: (Semigroup (f e), Applicative f) => e -> CtxResult s f e a
+failWith = throwError . pure
 
 mapErrs :: Functor f => (e -> e') -> CtxResult s f e a -> CtxResult s f e' a
 mapErrs = mapErr . fmap

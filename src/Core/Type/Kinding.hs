@@ -4,6 +4,8 @@ module Core.Type.Kinding where
 
 import Control.Applicative (Applicative (liftA2))
 import Control.Monad.FreeBi (iterA)
+import Control.Monad.Reader (ReaderT (..))
+import Core.Type.Result (TypeResult)
 import Core.Type.Syntax
 import Data.Bifunctor.Biff (Biff (Biff))
 import Data.Bifunctor.Join (Join (..))
@@ -15,8 +17,6 @@ import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position)
 import Data.Result
-
----------------------------------- DATA TYPES ----------------------------------
 
 data Expected
   = EKind ProperKind
@@ -31,11 +31,7 @@ data KindingError
   | KDifferentRows Position (NonEmpty ProperKind)
   deriving (Show, Eq)
 
-type KindingErrors = NonEmpty KindingError
-
-type KindingResult = CtxResult [ProperKind] KindingErrors
-
----------------------------------- ALGORITHM -----------------------------------
+type KindingResult = TypeResult KindingError
 
 checkKind :: Position -> ProperKind -> Term -> KindingResult ()
 checkKind p k t = intoCheck p k $ synthesizeKind t
@@ -43,7 +39,7 @@ checkKind p k t = intoCheck p k $ synthesizeKind t
 synthesizeKind :: Term -> KindingResult ProperKind
 synthesizeKind = foldFix $ \case
   TLam t -> case t of
-    LVar i -> CtxR $ Ok . (!! i)
+    LVar i -> ReaderT $ Ok . (!! i)
     LApp p f x -> do
       (kx, ky) <- f >>= pullArrow p
       intoCheck p kx x

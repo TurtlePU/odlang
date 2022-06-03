@@ -7,9 +7,11 @@ import Control.Arrow ((<<<))
 import Control.Monad ((<=<), (>=>))
 import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (FreeBi (..))
+import Control.Monad.Reader (ReaderT (..))
 import qualified Core.Type.Equivalence as Equivalence
 import qualified Core.Type.Evaluation as Evaluation
 import qualified Core.Type.Kinding as Kinding
+import Core.Type.Result (TypeResult)
 import Core.Type.Syntax
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
@@ -26,7 +28,7 @@ import Data.Maybe (fromMaybe)
 import Data.Position (Position)
 import Data.Reflection (reify)
 import Data.Reflection.Instances (Reflected (..), ReifiedEq (..), mkReflected)
-import Data.Result (CtxResult (..), Result (..), failWith, mapErrs, runCtx)
+import Data.Result (CtxResult, Result (..), failWith, mapErrs, runCtx)
 
 ------------------------------- KINDING FRONTEND -------------------------------
 
@@ -44,7 +46,7 @@ isType p = checkKind p Type
 
 ------------------------------- CONTRACTIVENESS --------------------------------
 
-checkContractiveness :: Position -> Type -> CtxResult a (NonEmpty Position) ()
+checkContractiveness :: Position -> Type -> CtxResult a NonEmpty Position ()
 checkContractiveness p t =
   if isContractive t then pure () else failWith p
 
@@ -70,9 +72,7 @@ data TypeEqError
   | TKind Kinding.KindingError
   | TContr Position
 
-type TypeEqResult = CtxResult [Kind] (NonEmpty TypeEqError)
-
-checkTypeEQ :: Position -> Type -> Type -> TypeEqResult ()
+checkTypeEQ :: Position -> Type -> Type -> TypeResult TypeEqError ()
 checkTypeEQ p l r = do
   checkWF p l *> checkWF p r
   (l', r') <- liftA2 (,) (eval l) (eval r)
@@ -92,9 +92,7 @@ data MultLeError
   | MLe (Equivalence.Offender TL)
   | MContr Position
 
-type MultLeResult = CtxResult [Kind] (NonEmpty MultLeError)
-
-checkMultLE :: Position -> Mult -> Mult -> MultLeResult ()
+checkMultLE :: Position -> Mult -> Mult -> TypeResult MultLeError ()
 checkMultLE p m n = do
   checkWF p m *> checkWF p n
   (m', n') <- liftA2 (,) (pullMult m) (pullMult n)
@@ -106,7 +104,7 @@ checkMultLE p m n = do
       mapErrs MContr (checkContractiveness p m)
         *> mapErrs MKind (checkKind p Mult m)
     pullMult m = Evaluation.liftMult <$> mapErrs MKind (Evaluation.eval m)
-    checkLE' m n = CtxR $ \s -> Ok $
+    checkLE' m n = ReaderT $ \s -> Ok $
       reify (ReifiedEq $ eq s) $ \p ->
         map (first unreflect)
           <$> Equivalence.checkMultLE (reflect p m) (reflect p n)
@@ -139,9 +137,7 @@ data ReprError
   = RKind Kinding.KindingError
   | RContr Position
 
-type ReprResult = CtxResult [Kind] (NonEmpty ReprError)
-
-rowRepr :: Position -> Row -> ReprResult RowRepr
+rowRepr :: Position -> Row -> TypeResult ReprError RowRepr
 rowRepr p r = do
   mapErrs RContr (checkContractiveness p r)
     *> mapErrs RKind (Kinding.synthesizeKind r >>= Kinding.pullRow p)
@@ -157,9 +153,7 @@ data KeyError
   = KKind Kinding.KindingError
   | KAmbiguous Position RowKey
 
-type KeyResult = CtxResult [Kind] (NonEmpty KeyError)
-
-getEntry :: Position -> RowRepr -> RowKey -> KeyResult (Maybe TL)
+getEntry :: Position -> RowRepr -> RowKey -> TypeResult KeyError (Maybe TL)
 getEntry p (MkRepr l _) (KLit k) = case MonoidalHashMap.lookup k l of
   Just (x :| []) -> pure (Just x)
   Just _ -> failWith . KAmbiguous p $ KLit k
@@ -194,7 +188,7 @@ data DataVariety
   | VForall
   | VSpread
 
-type PullResult = CtxResult [ProperKind] (NonEmpty PullError)
+type PullResult = TypeResult PullError
 
 pullArrow :: Position -> Type -> PullResult (Type, Type)
 pullArrow p =

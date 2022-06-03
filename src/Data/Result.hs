@@ -3,7 +3,7 @@
 module Data.Result where
 
 import Control.Applicative (Alternative (..), liftA2)
-import Control.Monad ((>=>))
+import Control.Monad.Reader (ReaderT (..), mapReaderT, withReaderT)
 import Data.Bifunctor (Bifunctor (..))
 
 data Result e a = Err e | Ok a deriving (Functor, Show, Eq)
@@ -34,30 +34,19 @@ instance Monoid e => Alternative (Result e) where
   Ok x <|> _ = Ok x
   _ <|> Ok x = Ok x
 
-newtype CtxResult s e a = CtxR {withCtx :: s -> Result e a} deriving (Functor)
+type CtxResult s f e = ReaderT s (Result (f e))
 
-runCtx :: s -> CtxResult s e a -> Result e a
-runCtx = flip withCtx
+runCtx :: s -> CtxResult s f e a -> Result (f e) a
+runCtx = flip runReaderT
 
-instance Bifunctor (CtxResult s) where
-  bimap f g x = CtxR $ bimap f g . withCtx x
+mapCtx :: (s -> s') -> CtxResult s' f e a -> CtxResult s f e a
+mapCtx = withReaderT
 
-instance Semigroup e => Applicative (CtxResult s e) where
-  pure = CtxR . pure . pure
-  f <*> x = CtxR $ liftA2 (<*>) (withCtx f) (withCtx x)
+failWith :: Applicative f => e -> CtxResult s f e a
+failWith = ReaderT . const . Err . pure
 
-instance Semigroup e => Monad (CtxResult s e) where
-  x >>= f = CtxR $ \s -> withCtx x s >>= runCtx s . f
+mapErrs :: Functor f => (e -> e') -> CtxResult s f e a -> CtxResult s f e' a
+mapErrs = mapErr . fmap
 
-instance Monoid e => Alternative (CtxResult s e) where
-  empty = CtxR $ pure empty
-  l <|> r = CtxR $ liftA2 (<|>) (withCtx l) (withCtx r)
-
-mapCtx :: (s -> s') -> CtxResult s' e a -> CtxResult s e a
-mapCtx f x = CtxR $ withCtx x . f
-
-failWith :: Applicative f => e -> CtxResult s (f e) a
-failWith = CtxR . const . Err . pure
-
-mapErrs :: Functor f => (e -> e') -> CtxResult s (f e) a -> CtxResult s (f e') a
-mapErrs = first . fmap
+mapErr :: (e -> e') -> ReaderT s (Result e) a -> ReaderT s (Result e') a
+mapErr = mapReaderT . first

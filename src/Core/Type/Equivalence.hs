@@ -6,8 +6,10 @@ module Core.Type.Equivalence where
 import Algebra.Lattice hiding (Join)
 import Control.Applicative (Alternative ((<|>)), liftA2)
 import Control.Monad.FreeBi (FreeBi (FreeBi, runFreeBi), iter)
+import Control.Monad.Reader (ReaderT (ReaderT))
 import Core.Type.Evaluation
 import Core.Type.Kinding
+import Core.Type.Result (TypeResult)
 import Core.Type.Syntax
 import Data.Bifoldable (Bifoldable (bifoldMap))
 import Data.Bifunctor (Bifunctor (..))
@@ -28,7 +30,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position)
 import Data.Reflection (reify)
 import Data.Reflection.Instances (Reflected (..), ReifiedEq (..), mkReflected)
-import Data.Result (CtxResult (..), Result (..), failWith, mapCtx, runCtx)
+import Data.Result (CtxResult, Result (..), failWith, mapCtx, mapErr, runCtx)
 
 ------------------------------------- MULT -------------------------------------
 
@@ -149,11 +151,11 @@ data DataVariety
   | VSpread Connective
   deriving (Eq, Show)
 
-type EqResult = CtxResult [ProperKind] (NonEmpty EqError)
+type EqResult = TypeResult EqError
 
 checkEQ :: Term -> Term -> EqResult ()
 -- ^ Terms are assumed to be in a beta-normal form
-checkEQ l r = first NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
+checkEQ l r = mapErr NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
   where
     impl :: Term -> Term -> RealEqResult ()
     impl l r =
@@ -166,7 +168,7 @@ checkEQ l r = first NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
               <|> extensionalEq l r
           )
 
-    checkAssumption (l, r) = CtxR $ \(_, as) ->
+    checkAssumption (l, r) = ReaderT $ \(_, as) ->
       if HashSet.member (l, r) as || HashSet.member (r, l) as
         then Ok ()
         else Err []
@@ -225,7 +227,7 @@ checkEQ l r = first NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
           mapCtx . bimap (k :) . HashSet.map $
             bimap (shift 1) (shift 1)
 
-        checkMultEQ' m m' = CtxR $ \s ->
+        checkMultEQ' m m' = ReaderT $ \s ->
           Ok $
             reify (ReifiedEq $ runImpl s) $
               fmap
@@ -234,7 +236,7 @@ checkEQ l r = first NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
           where
             reflect m p = fmap (mkReflected p) m
 
-        checkRowEQ' r r' = CtxR $ \s ->
+        checkRowEQ' r r' = ReaderT $ \s ->
           Ok $
             reify (ReifiedEq $ runImpl s) $
               liftA2 checkRowEQ (reflect r) (reflect r')
@@ -280,13 +282,14 @@ checkEQ l r = first NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
 
     mGuard b = if b then pure () else emptyErr
 
-    emptyErr = CtxR . const $ Err []
+    emptyErr = ReaderT . const $ Err []
 
-    fromKinding = mapCtx fst . first (NonEmpty.toList . fmap EKinding)
+    fromKinding :: KindingResult a -> RealEqResult a
+    fromKinding = mapCtx fst . mapErr (NonEmpty.toList . fmap EKinding)
 
 type Assumptions = HashSet (Term, Term)
 
-type RealEqResult = CtxResult ([ProperKind], Assumptions) [EqError]
+type RealEqResult = CtxResult ([ProperKind], Assumptions) [] EqError
 
 --------------------------------- MU UNFOLDING ---------------------------------
 

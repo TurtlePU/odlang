@@ -40,8 +40,6 @@ library
       Data.Reflection.Instances
       Data.Result
       Lib
-      Parser
-      Tree
   other-modules:
       Paths_odlang
   hs-source-dirs:
@@ -53,9 +51,7 @@ library
     , data-fix
     , free
     , hashable
-    , megaparsec
     , reflection
-    , text
     , unordered-containers
   default-language: Haskell2010
 
@@ -73,10 +69,8 @@ executable odlang-exe
     , data-fix
     , free
     , hashable
-    , megaparsec
     , odlang
     , reflection
-    , text
     , unordered-containers
   default-language: Haskell2010
 
@@ -97,11 +91,9 @@ test-suite odlang-test
     , data-fix
     , free
     , hashable
-    , megaparsec
     , odlang
     , reflection
     , tasty
     , tasty-hunit
-    , text
     , unordered-containers
   default-language: Haskell2010

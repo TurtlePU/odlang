@@ -101,6 +101,7 @@ data TermF tled term
         casesSplit :: Split2,
         cases :: RowBag (Refinement, term)
       }
+  deriving (Functor, Foldable, Traversable)
 
 instance Bifunctor TermF where
   bimap f g = \case

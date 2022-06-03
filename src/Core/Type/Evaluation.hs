@@ -10,7 +10,7 @@ import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (FreeBi (..))
 import Core.Type.Kinding (KindingResult, pullArrow, synthesizeKind)
 import Core.Type.Syntax
-import Data.Aps (Ap2 (..))
+import Data.Bifunctor.Ap2 (Ap2 (..))
 import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)

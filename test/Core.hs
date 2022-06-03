@@ -6,7 +6,7 @@ import Core.Type.Equivalence (checkEQ)
 import Core.Type.Evaluation (Substitution (..), eval, substitute)
 import Core.Type.Kinding (synthesizeKind)
 import Core.Type.Syntax
-import Data.Aps (Ap2 (..))
+import Data.Bifunctor.Ap2 (Ap2 (..))
 import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..))

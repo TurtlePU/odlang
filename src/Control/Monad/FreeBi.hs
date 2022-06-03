@@ -6,9 +6,9 @@ module Control.Monad.FreeBi where
 
 import Control.Monad.Free (Free (..), hoistFree)
 import qualified Control.Monad.Free as Free
-import Data.Aps (Ap2 (..))
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
+import Data.Bifunctor.Ap2 (Ap2 (..))
 import Data.Bitraversable (Bitraversable (..))
 import Data.Functor.Classes (Eq1, Eq2 (..), Show1 (..), Show2 (..))
 import Data.Hashable (Hashable)

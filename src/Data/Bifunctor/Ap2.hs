@@ -1,29 +1,15 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Data.Aps where
+module Data.Bifunctor.Ap2 where
 
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bitraversable (Bitraversable (..))
+import Data.Functor.Ap (Ap (..))
 import Data.Functor.Classes (Eq1 (..), Eq2 (..), Show1 (..), Show2 (..))
-import Data.Hashable.Lifted (Hashable1 (..), Hashable2 (..))
 import Data.Hashable (Hashable (..))
-
-newtype Ap f a = Ap (f a)
-  deriving newtype (Functor, Foldable, Eq1, Show1, Hashable1)
-
-instance Traversable f => Traversable (Ap f) where
-  sequenceA (Ap t) = Ap <$> sequenceA t
-
-instance (Eq1 f, Eq a) => Eq (Ap f a) where
-  (==) = liftEq (==)
-
-instance (Show1 f, Show a) => Show (Ap f a) where
-  showsPrec = liftShowsPrec showsPrec showList
-
-instance (Hashable1 f, Hashable a) => Hashable (Ap f a) where
-  hashWithSalt = liftHashWithSalt hashWithSalt
+import Data.Hashable.Lifted (Hashable1 (..), Hashable2 (..))
 
 newtype Ap2 f a b = Ap2 (f a b)
   deriving newtype (Bifunctor, Bifoldable, Eq2, Show2, Hashable2)

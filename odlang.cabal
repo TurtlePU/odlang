@@ -32,8 +32,9 @@ library
       Core.Type.Evaluation
       Core.Type.Kinding
       Core.Type.Syntax
-      Data.Aps
+      Data.Bifunctor.Ap2
       Data.EqBag
+      Data.Functor.Ap
       Data.Position
       Data.Reflection.Instances
       Data.Result

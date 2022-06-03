@@ -2,7 +2,7 @@
 
 module Core.Type where
 
-import Control.Applicative (Applicative (liftA2))
+import Control.Applicative (Applicative (..))
 import Control.Arrow ((<<<))
 import Control.Monad ((<=<), (>=>))
 import Control.Monad.Free (Free (..))
@@ -11,9 +11,9 @@ import qualified Core.Type.Equivalence as Equivalence
 import qualified Core.Type.Evaluation as Evaluation
 import qualified Core.Type.Kinding as Kinding
 import Core.Type.Syntax
-import Data.Aps (Ap2 (..))
-import Data.Bifoldable (Bifoldable (bifoldMap))
-import Data.Bifunctor (Bifunctor (first))
+import Data.Bifoldable (Bifoldable (..))
+import Data.Bifunctor (Bifunctor (..))
+import Data.Bifunctor.Ap2 (Ap2 (..))
 import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)

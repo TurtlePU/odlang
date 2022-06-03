@@ -2,6 +2,7 @@
 
 module Data.EqBag where
 
+import Data.Function (on)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Prelude hiding (filter)
@@ -56,10 +57,7 @@ compEq :: Eq a => NonEmpty a -> NonEmpty a -> Bool
 compEq xs ys = xs `lenEq` ys && xs `headEq` ys
 
 lenEq :: Foldable f => f a -> f a -> Bool
-lenEq = equating length
+lenEq = (==) `on` length
 
 headEq :: Eq a => NonEmpty a -> NonEmpty a -> Bool
-headEq = equating NonEmpty.head
-
-equating :: Eq a => (b -> a) -> b -> b -> Bool
-equating f x y = f x == f y
+headEq = (==) `on` NonEmpty.head

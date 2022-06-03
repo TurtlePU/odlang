@@ -156,19 +156,18 @@ data RowKey = KLit EntryKey | KRest
 
 data KeyError
   = KKind Kinding.KindingError
-  | KMissing Position RowKey
   | KAmbiguous Position RowKey
 
 type KeyResult = CtxResult [Kind] (NonEmpty KeyError)
 
-getEntry :: Position -> RowRepr -> RowKey -> KeyResult TL
+getEntry :: Position -> RowRepr -> RowKey -> KeyResult (Maybe TL)
 getEntry p (MkRepr (Multi l) _) (KLit k) = case l !? k of
-  Just (x :| []) -> pure x
+  Just (x :| []) -> pure (Just x)
   Just _ -> failWith . KAmbiguous p $ KLit k
-  Nothing -> failWith . KMissing p $ KLit k
+  Nothing -> pure Nothing
 getEntry p (MkRepr _ v) KRest = case v of
-  [x] -> mapErrs KKind . Evaluation.eval . Fix . TLam $ LRnd p x
-  [] -> failWith (KMissing p KRest)
+  [x] -> fmap Just . mapErrs KKind . Evaluation.eval . Fix . TLam $ LRnd p x
+  [] -> pure Nothing
   _ -> failWith (KAmbiguous p KRest)
 
 --------------------------- CONSTRUCTORS AND GETTERS ---------------------------

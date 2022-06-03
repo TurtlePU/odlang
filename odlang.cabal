@@ -34,7 +34,6 @@ library
       Core.Type.Syntax
       Data.Aps
       Data.EqBag
-      Data.IndexedBag
       Data.Position
       Data.Reflection.Instances
       Data.Result

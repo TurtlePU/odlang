@@ -1,9 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
 
 module Data.EqBag where
 
-import Data.IndexedBag (IndexedBag (IBag))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Prelude hiding (filter)
@@ -32,8 +30,8 @@ contains (MkBag b) x = any ((== x) . NonEmpty.head) b
 intersection :: Eq a => EqBag a -> EqBag a -> EqBag a
 intersection = filter . contains
 
-toMap :: EqBag a -> IndexedBag a ()
-toMap (MkBag b) = IBag (map ((,()) . NonEmpty.head) b)
+values :: EqBag a -> [a]
+values = map NonEmpty.head . unBag
 
 instance Eq a => Eq (EqBag a) where
   MkBag b == MkBag b' = b `lenEq` b' && all (flip any b' . compEq) b

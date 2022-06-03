@@ -108,7 +108,7 @@ checkMultLE p m n = do
     pullMult m = Evaluation.liftMult <$> mapErrs MKind (Evaluation.eval m)
     checkLE' m n = CtxR $ \s -> Ok $
       reify (ReifiedEq $ eq s) $ \p ->
-        first unreflect
+        map (first unreflect)
           <$> Equivalence.checkMultLE (reflect p m) (reflect p n)
     reflect = fmap . mkReflected
     eq s l r = case runCtx s (Equivalence.checkEQ l r) of

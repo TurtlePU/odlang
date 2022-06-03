@@ -7,7 +7,6 @@ import Data.Array.ST (MArray (newArray), readArray, runSTArray, writeArray)
 import Data.Array.Unboxed (Array)
 import Data.Either (partitionEithers)
 import Data.Foldable (for_)
-import Data.IndexedBag (IndexedBag)
 
 ------------------------------ CONTEXT SPLITTING -------------------------------
 
@@ -40,7 +39,7 @@ xs *** Refine rs = concat $ zipWith replicate rs xs
 
 ------------------------------------ TERMS -------------------------------------
 
-type RowBag = IndexedBag RowKey
+type RowBag a = Array Int (RowKey, a)
 
 data TermF tled term
   = TVar

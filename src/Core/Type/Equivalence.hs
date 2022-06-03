@@ -22,7 +22,6 @@ import qualified Data.HashMap.Monoidal as MonoidalHashMap
 import qualified Data.HashMap.Strict as HashMap
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
-import Data.IndexedBag (IndexedBag)
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position)
@@ -32,21 +31,21 @@ import Data.Result (CtxResult (..), Result (..), failWith, mapCtx, runCtx)
 
 ------------------------------------- MULT -------------------------------------
 
-type Offender a = IndexedBag a MultLit
+type Offender a = [(a, MultLit)]
 
 checkMultEQ :: Eq a => MultTerm a -> MultTerm a -> Maybe (Offender a)
 -- ^ Different variables are assumed to be independent
 checkMultEQ l r =
-  (fmap (`MultLit` False) <$> eqVia noWeakening)
-    <|> (fmap (MultLit False) <$> eqVia noContraction)
+  (fmap (second $ flip MultLit False) <$> eqVia noWeakening)
+    <|> (fmap (second $ MultLit False) <$> eqVia noContraction)
   where
     eqVia f = checkBoolEQ (first f l) (first f r)
 
 checkMultLE :: Eq a => MultTerm a -> MultTerm a -> Maybe (Offender a)
 -- ^ Different variables are assumed to be independent
 checkMultLE l r =
-  (fmap (`MultLit` False) <$> leVia noWeakening)
-    <|> (fmap (MultLit False) <$> leVia noContraction)
+  (fmap (second $ flip MultLit False) <$> leVia noWeakening)
+    <|> (fmap (second $ MultLit False) <$> leVia noContraction)
   where
     leVia f = checkBoolLE (evalM mkDNF $ first f l) (evalM mkCNF $ first f r)
 
@@ -54,7 +53,7 @@ checkBoolEQ ::
   Eq a =>
   FreeBi MultF Bool a ->
   FreeBi MultF Bool a ->
-  Maybe (IndexedBag a Bool)
+  Maybe [(a, Bool)]
 checkBoolEQ l r =
   checkBoolLE (evalM mkDNF l) (evalM mkCNF r)
     <|> checkBoolLE (evalM mkDNF r) (evalM mkCNF l)
@@ -62,14 +61,14 @@ checkBoolEQ l r =
 evalM :: Boolean b => (a -> b) -> FreeBi MultF Bool a -> b
 evalM f = iter interpT . fmap f
 
-checkBoolLE :: Eq a => DNF a -> CNF a -> Maybe (IndexedBag a Bool)
+checkBoolLE :: Eq a => DNF a -> CNF a -> Maybe [(a, Bool)]
 checkBoolLE (MkDNF dnf) (MkCNF cnf) = asum (liftA2 findSub dnf cnf)
   where
     findSub conj disj =
       if EqBag.isEmpty (conj `EqBag.intersection` disj)
         then Just (sub True conj <> sub False disj)
         else Nothing
-    sub val set = val <$ EqBag.toMap set
+    sub val = map (,val) . EqBag.values
 
 type NormalForm a = [EqBag a]
 
@@ -224,7 +223,7 @@ checkEQ l r = first NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
           Ok $
             reify (ReifiedEq $ runImpl s) $
               fmap
-                (first unreflect <$>)
+                (map (first unreflect) <$>)
                 (checkMultEQ <$> reflect m <*> reflect m')
           where
             reflect m p = fmap (mkReflected p) m

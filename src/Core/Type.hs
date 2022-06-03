@@ -9,6 +9,8 @@ import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (FreeBi (..))
 import Control.Monad.Reader (ReaderT (..))
 import Control.Monad.Result (CtxResult, Result (..), failWith, mapErrs, runCtx)
+import Core.Type.Contract (WellFormed (..))
+import qualified Core.Type.Contract as Contract
 import qualified Core.Type.Equivalence as Equivalence
 import qualified Core.Type.Evaluation as Evaluation
 import qualified Core.Type.Kinding as Kinding
@@ -20,6 +22,7 @@ import Data.Bifunctor.Ap2 (Ap2 (..))
 import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
+import Data.Function (on)
 import Data.Functor.Identity (Identity (..))
 import Data.HashMap.Monoidal (MonoidalHashMap)
 import qualified Data.HashMap.Monoidal as MonoidalHashMap
@@ -30,92 +33,50 @@ import Data.Position (Position)
 import Data.Reflection (reify)
 import Data.Reflection.Instances (Reflected (..), ReifiedEq (..), mkReflected)
 
+--------------------------- WELL-FORMEDNESS FRONTEND ---------------------------
+
+type Malformed = Term
+
+type TL = Contract.WellFormed
+
+wellFormed :: Position -> Malformed -> TypeResult Contract.ContractError TL
+wellFormed = Contract.wellFormed
+
 ------------------------------- KINDING FRONTEND -------------------------------
 
 type Kind = ProperKind
 
-type TL = Term
-
-type KindingResult = Kinding.KindingResult
-
-checkKind :: Position -> Kind -> TL -> KindingResult ()
-checkKind = Kinding.checkKind
-
-isType :: Position -> TL -> KindingResult ()
-isType p = checkKind p Type
-
-------------------------------- CONTRACTIVENESS --------------------------------
-
-checkContractiveness :: Position -> Type -> CtxResult a NonEmpty Position ()
-checkContractiveness p t =
-  if isContractive t then pure () else failWith p
-
-isContractive :: Type -> Bool
-isContractive t = areGuarded t HashSet.empty
-  where
-    areGuarded = foldFix $ \case
-      TLam t -> case t of
-        LVar i -> not . HashSet.member i
-        LAbs _ t -> t . HashSet.map succ
-        LFix _ _ t -> t . HashSet.insert 0 . HashSet.map succ
-        t -> and . sequence t
-      TMul _ (FreeBi (Pure t)) -> t
-      TRow _ (Join (Biff (FreeBi (Pure (Identity t))))) -> t
-      t -> const . and $ sequence t HashSet.empty
+checkKind :: Position -> Kind -> TL -> Kinding.KindingResult ()
+checkKind p k = Kinding.checkKind p k . unWF
 
 ---------------------------- TYPE EQUALITY FRONTEND ----------------------------
 
 type Type = TL
 
-data TypeEqError
-  = TEq Equivalence.EqError
-  | TKind Kinding.KindingError
-  | TContr Position
-
-checkTypeEQ :: Position -> Type -> Type -> TypeResult TypeEqError ()
-checkTypeEQ p l r = do
-  checkWF p l *> checkWF p r
-  (l', r') <- liftA2 (,) (eval l) (eval r)
-  mapErrs TEq (Equivalence.checkEQ l' r')
-  where
-    checkWF p t =
-      mapErrs TContr (checkContractiveness p t)
-        *> mapErrs TKind (isType p t)
-    eval = mapErrs TKind . Evaluation.eval
+checkTypeEQ :: Type -> Type -> TypeResult Equivalence.EqError ()
+checkTypeEQ = Equivalence.checkEQ `on` unWF
 
 ----------------------------- MULTIPLICITY FRONTEND ----------------------------
 
 type Mult = TL
 
-data MultLeError
-  = MKind Kinding.KindingError
-  | MLe (Equivalence.Offender TL)
-  | MContr Position
-
-checkMultLE :: Position -> Mult -> Mult -> TypeResult MultLeError ()
-checkMultLE p m n = do
-  checkWF p m *> checkWF p n
-  (m', n') <- liftA2 (,) (pullMult m) (pullMult n)
-  mapErrs MKind (checkLE' m' n') >>= \case
-    Just offender -> failWith (MLe offender)
+checkMultLE :: Mult -> Mult -> TypeResult (Equivalence.Offender TL) ()
+checkMultLE m n =
+  on checkLE' (Evaluation.liftMult . unWF) m n >>= \case
+    Just offender -> failWith $ map (first MkWF) offender
     Nothing -> pure ()
   where
-    checkWF p m =
-      mapErrs MContr (checkContractiveness p m)
-        *> mapErrs MKind (checkKind p Mult m)
-    pullMult m = Evaluation.liftMult <$> mapErrs MKind (Evaluation.eval m)
     checkLE' m n = ReaderT $ \s -> Ok $
       reify (ReifiedEq $ eq s) $ \p ->
         map (first unreflect)
-          <$> Equivalence.checkMultLE (reflect p m) (reflect p n)
-    reflect = fmap . mkReflected
+          <$> on Equivalence.checkMultLE (mkReflected p <$>) m n
     eq s l r = case runCtx s (Equivalence.checkEQ l r) of
       Ok _ -> True
       Err _ -> False
 
 multAdmitting :: Int -> Position -> Mult
 multAdmitting n p =
-  Fix . TMul p . FreeBi . Free . Ap2 . MLit $
+  MkWF . Fix . TMul p . FreeBi . Free . Ap2 . MLit $
     MultLit {noWeakening = n > 0, noContraction = n < 2}
 
 --------------------------------- ROW FRONTEND ---------------------------------
@@ -133,19 +94,12 @@ instance Semigroup RowRepr where
 instance Monoid RowRepr where
   mempty = MkRepr mempty mempty
 
-data ReprError
-  = RKind Kinding.KindingError
-  | RContr Position
-
-rowRepr :: Position -> Row -> TypeResult ReprError RowRepr
-rowRepr p r = do
-  mapErrs RContr (checkContractiveness p r)
-    *> mapErrs RKind (Kinding.synthesizeKind r >>= Kinding.pullRow p)
-  bifoldMap entry var . Evaluation.liftRow . Identity
-    <$> mapErrs RKind (Evaluation.eval r)
+rowRepr :: Row -> RowRepr
+rowRepr = bifoldMap entry var . Evaluation.liftRow . Identity . unWF
   where
-    var = MkRepr mempty . pure . runIdentity
-    entry (k, v) = flip MkRepr mempty . MonoidalHashMap.singleton k $ pure v
+    var = MkRepr mempty . pure . MkWF . runIdentity
+    entry (k, v) =
+      flip MkRepr mempty . MonoidalHashMap.singleton k . pure $ MkWF v
 
 data RowKey = KLit EntryKey | KRest
 
@@ -159,16 +113,15 @@ getEntry p (MkRepr l _) (KLit k) = case MonoidalHashMap.lookup k l of
   Just _ -> failWith . KAmbiguous p $ KLit k
   Nothing -> pure Nothing
 getEntry p (MkRepr _ v) KRest = case v of
-  [x] -> fmap Just . mapErrs KKind . Evaluation.eval . Fix . TLam $ LRnd p x
+  [MkWF x] ->
+    fmap (Just . MkWF) . mapErrs KKind . Evaluation.eval . Fix . TLam $ LRnd p x
   [] -> pure Nothing
   _ -> failWith (KAmbiguous p KRest)
 
 --------------------------- CONSTRUCTORS AND GETTERS ---------------------------
 
-type Data = TL
-
-mktype :: Position -> DataF TL -> Mult -> Type
-mktype p = curry $ Fix . TType p . uncurry TLit . first (Fix . TData p)
+mktype :: Position -> DataF Type -> Mult -> Type
+mktype p t = MkWF . Fix . TType p . TLit (Fix . TData p $ unWF <$> t) . unWF
 
 arrow :: Position -> Type -> Type -> Mult -> Type
 arrow p d c = mktype p (PArrow d c)
@@ -193,23 +146,20 @@ type PullResult = TypeResult PullError
 pullArrow :: Position -> Type -> PullResult (Type, Type)
 pullArrow p =
   layer >=> \case
-    Fix (TType _ (TLit (Fix (TData _ (PArrow d c))) _)) -> pure (d, c)
+    Fix (TType _ (TLit (Fix (TData _ (PArrow d c))) _)) -> pure (MkWF d, MkWF c)
     _ -> failWith (PNotThe p VArrow)
 
 pullForall :: Position -> Type -> PullResult (Kind, Type)
 pullForall p =
   layer >=> \case
-    Fix (TType _ (TLit (Fix (TData _ (PForall k t))) _)) -> pure (k, t)
+    Fix (TType _ (TLit (Fix (TData _ (PForall k t))) _)) -> pure (k, MkWF t)
     _ -> failWith (PNotThe p VForall)
 
 pullSpread :: Position -> Type -> PullResult (Connective, Row)
 pullSpread p =
   layer >=> \case
-    Fix (TType _ (TLit (Fix (TData _ (PSpread c r))) _)) -> pure (c, r)
+    Fix (TType _ (TLit (Fix (TData _ (PSpread c r))) _)) -> pure (c, MkWF r)
     _ -> failWith (PNotThe p VSpread)
 
-layer :: Term -> PullResult Term
-layer =
-  mapErrs PKind
-    <<< liftA2 fromMaybe pure Equivalence.unfoldMuPath
-    <=< Evaluation.eval
+layer :: Type -> PullResult Term
+layer = mapErrs PKind . liftA2 fromMaybe pure Equivalence.unfoldMuPath . unWF

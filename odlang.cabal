@@ -29,6 +29,7 @@ library
       Control.Monad.Result
       Core.Term
       Core.Type
+      Core.Type.Contract
       Core.Type.Equivalence
       Core.Type.Evaluation
       Core.Type.Kinding

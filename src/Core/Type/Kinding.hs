@@ -3,6 +3,7 @@
 module Core.Type.Kinding where
 
 import Control.Applicative (Applicative (liftA2))
+import Control.Composition (on, (.@))
 import Control.Monad.FreeBi (iterA)
 import Control.Monad.Reader (ReaderT (..))
 import Control.Monad.Result (Result (..), failWith, mapCtx)
@@ -27,81 +28,80 @@ data Expected
   deriving (Show, Eq)
 
 data KindingError
-  = KMismatch Position ProperKind Expected
-  | KDifferentRows Position (NonEmpty ProperKind)
+  = KMismatch ProperKind Expected Position
+  | KDifferentRows (NonEmpty ProperKind) Position
   deriving (Show, Eq)
 
 type KindingResult = TypeResult KindingError
 
-checkKind :: Position -> ProperKind -> Term -> KindingResult ()
-checkKind p k t = intoCheck p k $ synthesizeKind t
+checkKind :: ProperKind -> Term -> Position -> KindingResult ()
+checkKind = synthesizeKind .@ intoCheck
 
 synthesizeKind :: Term -> KindingResult ProperKind
 synthesizeKind = foldFix $ \case
   TLam t -> case t of
     LVar i -> ReaderT $ Ok . (!! i)
-    LApp p f x -> do
-      (kx, ky) <- f >>= pullArrow p
-      intoCheck p kx x
+    LApp f x p -> do
+      (kx, ky) <- f >>= flip pullArrow p
+      intoCheck kx x p
       pure ky
     LAbs k t -> (k :->:) <$> mapCtx (k :) t
-    LSPair p l r ->
-      Simple <$> liftA2 (:*:) (l >>= pullSimple p) (r >>= pullSimple p)
+    LSPair l r p -> Simple <$> on (liftA2 (:*:)) (>>= flip pullSimple p) l r
     LPair l r -> liftA2 (:**:) l r
-    LFst p t -> fst <$> (t >>= pullPair p)
-    LSnd p t -> snd <$> (t >>= pullPair p)
-    LDat p t -> intoCheck p Type t $> Simple Data
-    LMul p t -> intoCheck p Type t $> Mult
-    LFix p k t -> intoAssert p (Simple k) $ mapCtx (Simple k :) t
-    LMap p f x -> do
-      (kx, ky) <- f >>= pullArrow p
-      intoCheck p (Row kx) x
+    LFst t p -> fst <$> (t >>= flip pullPair p)
+    LSnd t p -> snd <$> (t >>= flip pullPair p)
+    LDat t p -> intoCheck Type t p $> Simple Data
+    LMul t p -> intoCheck Type t p $> Mult
+    LFix k t p -> intoAssert (Simple k) (mapCtx (Simple k :) t) p
+    LMap f x p -> do
+      (kx, ky) <- f >>= flip pullArrow p
+      intoCheck (Row kx) x p
       pure (Row ky)
-    LRnd p t -> t >>= pullRow p
-  TMul p m -> for_ m (intoCheck p Mult) $> Mult
-  TRow p (Join (Biff x)) -> do
+    LRnd t p -> t >>= flip pullRow p
+  TMul m p -> for_ m (flip (intoCheck Mult) p) $> Mult
+  TRow (Join (Biff x)) p -> do
     ks <- sequenceA (iterA fold $ fmap runIdentity x)
     case NonEmpty.nub ks of
       Row k :| [] -> pure (Row k)
-      k :| [] -> failWith $ KMismatch p k ERow
-      ks -> failWith $ KDifferentRows p ks
+      k :| [] -> failWith $ KMismatch k ERow p
+      ks -> failWith $ KDifferentRows ks p
     where
-      fold t = case t of
+      fold = \case
         REmpty k -> pure . pure $ Row k
         REntry (_, v) -> pure $ Row <$> v
         RJoin l r -> l <> r
-  TType p (TLit d m) ->
-    intoCheck p (Simple Data) d *> intoCheck p Mult m $> Type
-  TData p t -> case t of
-    PArrow d c -> intoCheck p Type d *> intoCheck p Type c $> Simple Data
-    PForall k t -> mapCtx (k :) (intoCheck p Type t) $> Simple Data
-    PSpread _ r -> intoCheck p (Row Type) r $> Simple Data
+  TType (TLit d m) p ->
+    intoCheck (Simple Data) d p *> intoCheck Mult m p $> Type
+  TData t p -> case t of
+    PArrow d c -> intoCheck Type d p *> intoCheck Type c p $> Simple Data
+    PForall k t -> mapCtx (k :) (intoCheck Type t p) $> Simple Data
+    PSpread _ r -> intoCheck (Row Type) r p $> Simple Data
   where
-    intoAssert p k k' = intoCheck p k k' $> k
+    intoAssert k k' p = intoCheck k k' p $> k
 
-    pullSimple p = \case
-      Simple k -> pure k
-      k' -> failWith $ KMismatch p k' ESimple
+    pullSimple = \case
+      Simple k -> const $ pure k
+      k' -> failWith . KMismatch k' ESimple
 
-    pullPair p = \case
-      Simple (k :*: k') -> pure (Simple k, Simple k')
-      (k :**: k') -> pure (k, k')
-      k' -> failWith $ KMismatch p k' EPair
+    pullPair = \case
+      Simple (k :*: k') -> const $ pure (Simple k, Simple k')
+      (k :**: k') -> const $ pure (k, k')
+      k' -> failWith . KMismatch k' EPair
 
 intoCheck ::
-  Position -> ProperKind -> KindingResult ProperKind -> KindingResult ()
-intoCheck p k mk = do
+  ProperKind -> KindingResult ProperKind -> Position -> KindingResult ()
+intoCheck k mk p = do
   k' <- mk
   if k == k'
     then pure ()
-    else failWith $ KMismatch p k' $ EKind k
+    else failWith $ KMismatch k' (EKind k) p
 
-pullRow :: Position -> ProperKind -> KindingResult ProperKind
-pullRow p = \case
-  Row k -> pure k
-  k' -> failWith $ KMismatch p k' ERow
+pullRow :: ProperKind -> Position -> KindingResult ProperKind
+pullRow = \case
+  Row k -> const $ pure k
+  k' -> failWith . KMismatch k' ERow
 
-pullArrow :: Position -> ProperKind -> KindingResult (ProperKind, ProperKind)
-pullArrow p = \case
-  (k :->: k') -> pure (k, k')
-  k' -> failWith $ KMismatch p k' EOperator
+pullArrow :: ProperKind -> Position -> KindingResult (ProperKind, ProperKind)
+pullArrow = \case
+  (k :->: k') -> const $ pure (k, k')
+  k' -> failWith . KMismatch k' EOperator

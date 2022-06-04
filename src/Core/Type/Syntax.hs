@@ -5,6 +5,8 @@
 module Core.Type.Syntax where
 
 import Algebra.Lattice (BoundedLattice, Lattice (..), fromBool)
+import Control.Composition ((.*), (.@), (.@@), (.@@@))
+import Control.Monad (join)
 import Control.Monad.FreeBi (FreeBi, iter)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bifunctor.Biff (Biff (..))
@@ -50,7 +52,7 @@ data MultF l a
   deriving (Generic1, Functor, Foldable, Traversable, Generic, Eq, Show)
 
 evalM :: BoundedLattice b => (a -> b) -> FreeBi MultF Bool a -> b
-evalM f = iter interpT . fmap f
+evalM = iter interpT .* fmap
   where
     interpT (MLit x) = fromBool x
     interpT (MJoin l r) = l \/ r
@@ -65,8 +67,8 @@ $(deriveShow2 ''MultF)
 $(deriveShow1 ''MultF)
 
 instance Hashable2 MultF where
-  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \p ->
-    liftHashWithSalt hb s $ first (mkReflected p) x
+  liftHashWithSalt2 ha = reify (ReifiedHashable ha) $ \p ->
+    first (mkReflected p) .@@ liftHashWithSalt
 
 instance Hashable l => Hashable1 (MultF l)
 
@@ -99,8 +101,8 @@ $(deriveShow2 ''RowF)
 $(deriveShow1 ''RowF)
 
 instance Hashable2 RowF where
-  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \p ->
-    liftHashWithSalt hb s $ first (mkReflected p) x
+  liftHashWithSalt2 ha = reify (ReifiedHashable ha) $ \p ->
+    first (mkReflected p) .@@ liftHashWithSalt
 
 instance Hashable e => Hashable1 (RowF e)
 
@@ -145,17 +147,17 @@ instance Hashable a => Hashable (TypeF a)
 
 data LambdaF a
   = LVar Int
-  | LApp Position a a
+  | LApp a a Position
   | LAbs ProperKind a
-  | LSPair Position a a
+  | LSPair a a Position
   | LPair a a
-  | LFst Position a
-  | LSnd Position a
-  | LDat Position a
-  | LMul Position a
-  | LFix Position SimpleKind a
-  | LMap Position a a
-  | LRnd Position a
+  | LFst a Position
+  | LSnd a Position
+  | LDat a Position
+  | LMul a Position
+  | LFix SimpleKind a Position
+  | LMap a a Position
+  | LRnd a Position
   deriving (Generic1, Functor, Foldable, Traversable, Generic, Eq, Show)
 
 $(deriveEq1 ''LambdaF)
@@ -169,24 +171,24 @@ instance Hashable a => Hashable (LambdaF a)
 
 data TermF a
   = TLam (LambdaF a)
-  | TType Position (TypeF a)
-  | TData Position (DataF a)
-  | TRow Position (Join RowTerm a)
-  | TMul Position (MultTerm a)
+  | TType (TypeF a) Position
+  | TData (DataF a) Position
+  | TRow (Join RowTerm a) Position
+  | TMul (MultTerm a) Position
   deriving (Generic1, Functor, Foldable, Traversable, Generic, Eq, Show)
 
 $(deriveEq1 ''TermF)
 $(deriveShow1 ''TermF)
 
 instance Hashable2 f => Hashable1 (Join f) where
-  liftHashWithSalt ha s = liftHashWithSalt2 ha ha s . runJoin
+  liftHashWithSalt = runJoin .@@ join liftHashWithSalt2
 
 instance (Hashable2 f, Hashable a) => Hashable (Join f a) where
   hashWithSalt = liftHashWithSalt hashWithSalt
 
 instance (Hashable2 p, Hashable1 f, Hashable1 g) => Hashable2 (Biff p f g) where
-  liftHashWithSalt2 ha hb s =
-    liftHashWithSalt2 (liftHashWithSalt ha) (liftHashWithSalt hb) s . runBiff
+  liftHashWithSalt2 =
+    runBiff .@@@ liftHashWithSalt .@ liftHashWithSalt2 . liftHashWithSalt
 
 instance Hashable1 TermF
 

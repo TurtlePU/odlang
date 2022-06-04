@@ -47,6 +47,8 @@ library
       array
     , base >=4.7 && <5
     , bifunctors
+    , composition-extra
+    , composition-prelude
     , data-fix
     , deriving-compat
     , free
@@ -69,6 +71,8 @@ executable odlang-exe
       array
     , base >=4.7 && <5
     , bifunctors
+    , composition-extra
+    , composition-prelude
     , data-fix
     , deriving-compat
     , free
@@ -95,6 +99,8 @@ test-suite odlang-test
     , array
     , base >=4.7 && <5
     , bifunctors
+    , composition-extra
+    , composition-prelude
     , data-fix
     , deriving-compat
     , free

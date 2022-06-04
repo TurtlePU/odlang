@@ -22,19 +22,19 @@ data ContractError
   = CKind KindingError
   | CContr Position
 
-wellFormed :: Position -> Term -> TypeResult ContractError WellFormed
-wellFormed p t =
+wellFormed :: Term -> Position -> TypeResult ContractError WellFormed
+wellFormed t =
   if isContractive t
-    then failWith (CContr p)
-    else MkWF <$> mapErrs CKind (synthesizeKind t *> eval t)
+    then failWith . CContr
+    else const $ MkWF <$> mapErrs CKind (synthesizeKind t *> eval t)
   where
     isContractive t = areGuarded t HashSet.empty
     areGuarded = foldFix $ \case
       TLam t -> case t of
         LVar i -> not . HashSet.member i
         LAbs _ t -> t . HashSet.map succ
-        LFix _ _ t -> t . HashSet.insert 0 . HashSet.map succ
+        LFix _ t _ -> t . HashSet.insert 0 . HashSet.map succ
         t -> and . sequence t
-      TMul _ (FreeBi (Pure t)) -> t
-      TRow _ (Join (Biff (FreeBi (Pure (Identity t))))) -> t
+      TMul (FreeBi (Pure t)) _ -> t
+      TRow (Join (Biff (FreeBi (Pure (Identity t))))) _ -> t
       t -> const . and $ sequence t HashSet.empty

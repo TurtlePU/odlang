@@ -4,6 +4,7 @@
 
 module Control.Monad.FreeBi where
 
+import Control.Composition ((.@@), (.@@@))
 import Control.Monad.Free (Free (..))
 import qualified Control.Monad.Free as Free
 import Data.Bifoldable (Bifoldable (..))
@@ -88,11 +89,11 @@ instance Eq2 f => Eq2 (FreeBi f) where
         _ -> False
 
 instance (Bifunctor f, Show2 f) => Show2 (FreeBi f) where
-  liftShowsPrec2 ia _ ib lb i x = reify (ReifiedShow ia) $ \p ->
-    liftShowsPrec ib lb i $ first (mkReflected p) x
+  liftShowsPrec2 ia _ = reify (ReifiedShow ia) $ \p ->
+    first (mkReflected p) .@@@ liftShowsPrec
 
 instance (Bifunctor f, Hashable2 f) => Hashable2 (FreeBi f) where
-  liftHashWithSalt2 ha hb s x = reify (ReifiedHashable ha) $ \p ->
-    liftHashWithSalt hb s $ first (mkReflected p) x
+  liftHashWithSalt2 ha = reify (ReifiedHashable ha) $ \p ->
+    first (mkReflected p) .@@ liftHashWithSalt
 
 instance (Functor f, Hashable1 f) => Hashable1 (Free f)

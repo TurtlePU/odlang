@@ -2,7 +2,8 @@
 
 module Data.EqBag where
 
-import Data.Function (on)
+import Control.Applicative (Applicative (..))
+import Control.Composition (on, (.@))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Prelude hiding (filter)
@@ -25,20 +26,20 @@ insert = unsafeCons . pure
 filter :: (a -> Bool) -> EqBag a -> EqBag a
 filter f = MkBag . Prelude.filter (f . NonEmpty.head) . unBag
 
-contains :: Eq a => EqBag a -> a -> Bool
-contains (MkBag b) x = any ((== x) . NonEmpty.head) b
+contains :: Eq a => a -> EqBag a -> Bool
+contains = unBag .@ any . (NonEmpty.head .@ (==))
 
 intersection :: Eq a => EqBag a -> EqBag a -> EqBag a
-intersection = filter . contains
+intersection = filter . flip contains
 
 values :: EqBag a -> [a]
 values = map NonEmpty.head . unBag
 
 instance Eq a => Eq (EqBag a) where
-  MkBag b == MkBag b' = b `lenEq` b' && all (flip any b' . compEq) b
+  (==) = bicomp (&&) lenEq ((compEq .@ flip any) .@ flip all) `on` unBag
 
 instance Eq a => Semigroup (EqBag a) where
-  MkBag l <> r = foldr unsafeCons r l
+  (<>) = flip (foldr unsafeCons) . unBag
 
 instance Eq a => Monoid (EqBag a) where
   mempty = empty
@@ -54,7 +55,10 @@ unsafeCons c = MkBag . cons' . unBag
           else c' : cons' cs
 
 compEq :: Eq a => NonEmpty a -> NonEmpty a -> Bool
-compEq xs ys = xs `lenEq` ys && xs `headEq` ys
+compEq = bicomp (&&) lenEq headEq
+
+bicomp :: (a -> b -> c) -> (d -> e -> a) -> (d -> e -> b) -> d -> e -> c
+bicomp = liftA2 . liftA2
 
 lenEq :: Foldable f => f a -> f a -> Bool
 lenEq = (==) `on` length

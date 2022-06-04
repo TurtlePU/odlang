@@ -5,8 +5,10 @@ module Core.Type.Equivalence where
 
 import Algebra.Lattice hiding (Join)
 import Control.Applicative (Alternative ((<|>)), liftA2)
+import Control.Composition (on, (.*), (.**), (.@))
+import Control.Monad (join)
 import Control.Monad.FreeBi (FreeBi (FreeBi, runFreeBi), iter)
-import Control.Monad.Reader (ReaderT (ReaderT))
+import Control.Monad.Reader (ReaderT (ReaderT, runReaderT))
 import Control.Monad.Result
 import Core.Type.Evaluation
 import Core.Type.Kinding
@@ -18,8 +20,9 @@ import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.EqBag (EqBag)
 import qualified Data.EqBag as EqBag
-import Data.Fix (Fix (..))
+import Data.Fix (Fix (..), foldFix)
 import Data.Foldable (asum)
+import Data.Function.Slip (slipl, slipr)
 import Data.Functor.Identity (Identity (..))
 import Data.HashMap.Monoidal (MonoidalHashMap (..))
 import qualified Data.HashMap.Monoidal as MonoidalHashMap
@@ -42,7 +45,7 @@ checkMultEQ l r =
   (fmap (second $ flip MultLit False) <$> eqVia noWeakening)
     <|> (fmap (second $ MultLit False) <$> eqVia noContraction)
   where
-    eqVia f = checkBoolEQ (first f l) (first f r)
+    eqVia f = on checkBoolEQ (first f) l r
 
 checkMultLE :: Eq a => MultTerm a -> MultTerm a -> Maybe (Offender a)
 -- ^ Different variables are assumed to be independent
@@ -68,7 +71,7 @@ checkBoolLE (MkDNF dnf) (MkCNF cnf) = asum (liftA2 findSub dnf cnf)
       if EqBag.isEmpty (conj `EqBag.intersection` disj)
         then Just (sub True conj <> sub False disj)
         else Nothing
-    sub val = map (,val) . EqBag.values
+    sub = EqBag.values .@ map . flip (,)
 
 type NormalForm a = [EqBag a]
 
@@ -118,10 +121,10 @@ checkRowEQ l r =
   where
     intoRow =
       (\(MkRow lit var) -> (getMonoidalHashMap lit, var))
-        . bifoldMap entry var
+        . bifoldMap (uncurry entry) var
         . runBiff
-    entry (k, v) =
-      MkRow (MonoidalHashMap.singleton k $ EqBag.singleton v) EqBag.empty
+    entry =
+      flip MkRow EqBag.empty .* EqBag.singleton .@ MonoidalHashMap.singleton
     var = MkRow mempty . EqBag.singleton . runIdentity
 
 data Row t r = MkRow
@@ -138,9 +141,9 @@ instance (Eq t, Eq r) => Monoid (Row t r) where
 ------------------------------ GENERAL EQUIVALENCE -----------------------------
 
 data EqError
-  = EMultEq Position Position (Offender Term)
-  | ERowEq Position Position (NonEmpty RowEqError)
-  | EDataEq Position Position (DataVariety, DataVariety)
+  = EMultEq (Offender Term) Position Position
+  | ERowEq (NonEmpty RowEqError) Position Position
+  | EDataEq (DataVariety, DataVariety) Position Position
   | ETermNeq (Term, Term)
   | EKinding KindingError
   deriving (Eq, Show)
@@ -155,7 +158,7 @@ type EqResult = TypeResult EqError
 
 checkEQ :: Term -> Term -> EqResult ()
 -- ^ Terms are assumed to be in a beta-normal form
-checkEQ l r = mapErr NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
+checkEQ = mapErr NonEmpty.fromList .* mapCtx (,HashSet.empty) .* impl
   where
     impl :: Term -> Term -> RealEqResult ()
     impl l r =
@@ -168,10 +171,11 @@ checkEQ l r = mapErr NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
               <|> extensionalEq l r
           )
 
-    checkAssumption (l, r) = ReaderT $ \(_, as) ->
-      if HashSet.member (l, r) as || HashSet.member (r, l) as
-        then Ok ()
-        else Err []
+    checkAssumption =
+      ReaderT . \(l, r) (_, as) ->
+        if HashSet.member (l, r) as || HashSet.member (r, l) as
+          then Ok ()
+          else Err []
 
     unfoldingEq l r = do
       k <- fromKinding (synthesizeKind l)
@@ -183,12 +187,12 @@ checkEQ l r = mapErr NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
     identityEq l r = do
       fromKinding (synthesizeKind l) >>= pullRow
       case (l, r) of
-        (Fix (TLam (LMap p f l)), r) -> isID p f *> impl l r
-        (l, Fix (TLam (LMap p f r))) -> isID p f *> impl l r
+        (Fix (TLam (LMap f l p)), r) -> isID f p *> impl l r
+        (l, Fix (TLam (LMap f r p))) -> isID f p *> impl l r
         _ -> emptyErr
       where
-        isID p f = do
-          (kx, ky) <- fromKinding (synthesizeKind f >>= pullArrow p)
+        isID f p = do
+          (kx, ky) <- fromKinding (synthesizeKind f >>= flip pullArrow p)
           mGuard (kx == ky)
           impl f . Fix . TLam . LAbs kx . Fix . TLam $ LVar 0
 
@@ -197,29 +201,29 @@ checkEQ l r = mapErr NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
           _ -> emptyErr
 
     structuralEq (Fix l) (Fix r) = case (l, r) of
-      (TMul lp lm, TMul rp rm) ->
+      (TMul lm lp, TMul rm rp) ->
         checkMultEQ' lm rm >>= \case
-          Just offender -> failWith $ EMultEq lp rp offender
+          Just offender -> failWith $ EMultEq offender lp rp
           Nothing -> pure ()
-      (TRow lp (Join lr), TRow rp (Join rr)) ->
+      (TRow (Join lr) lp, TRow (Join rr) rp) ->
         checkRowEQ' lr rr >>= \case
-          e : es -> failWith $ ERowEq lp rp (e :| es)
+          e : es -> failWith $ ERowEq (e :| es) lp rp
           [] -> pure ()
-      (TData lp ld, TData rp rd) -> case (ld, rd) of
+      (TData ld lp, TData rd rp) -> case (ld, rd) of
         (PArrow ld lc, PArrow rd rc) -> impl ld rd *> impl lc rc
         (PForall lk lt, PForall rk rt) | lk == rk -> shiftCtx lk $ impl lt rt
         (PSpread lc lt, PSpread rc rt) | lc == rc -> impl lt rt
-        (ld, rd) -> failWith $ EDataEq lp rp (variety ld, variety rd)
+        (ld, rd) -> failWith $ EDataEq (variety ld, variety rd) lp rp
       (TLam ll, TLam rl) -> case (ll, rl) of
         (LVar li, LVar ri) | li == ri -> pure ()
-        (LApp _ lf lx, LApp _ rf rx) -> impl lf rf *> impl lx rx
+        (LApp lf lx _, LApp rf rx _) -> impl lf rf *> impl lx rx
         (LAbs lk lb, LAbs rk rb) | lk == rk -> shiftCtx lk $ impl lb rb
-        (LFst _ lp, LFst _ rp) -> impl lp rp
-        (LSnd _ lp, LSnd _ rp) -> impl lp rp
-        (LDat _ lt, LDat _ rt) -> impl lt rt
-        (LMul _ lt, LMul _ rt) -> impl lt rt
-        (LMap _ lf lr, LMap _ rf rr) -> impl lf rf *> impl lr rr
-        (LRnd _ lr, LRnd _ rr) -> impl lr rr
+        (LFst lp _, LFst rp _) -> impl lp rp
+        (LSnd lp _, LSnd rp _) -> impl lp rp
+        (LDat lt _, LDat rt _) -> impl lt rt
+        (LMul lt _, LMul rt _) -> impl lt rt
+        (LMap lf lr _, LMap rf rr _) -> impl lf rf *> impl lr rr
+        (LRnd lr _, LRnd rr _) -> impl lr rr
         (ll, rl) -> failWith $ ETermNeq (Fix $ TLam ll, Fix $ TLam rl)
       (l, r) -> failWith $ ETermNeq (Fix l, Fix r)
       where
@@ -227,25 +231,20 @@ checkEQ l r = mapErr NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
           mapCtx . bimap (k :) . HashSet.map $
             bimap (shift 1) (shift 1)
 
-        checkMultEQ' m m' = ReaderT $ \s ->
-          Ok $
-            reify (ReifiedEq $ runImpl s) $
-              fmap
-                (map (first unreflect) <$>)
-                (checkMultEQ <$> reflect m <*> reflect m')
+        checkMultEQ' = ReaderT .* Ok .** slipr check
           where
-            reflect m p = fmap (mkReflected p) m
+            check s =
+              reify (ReifiedEq $ runImpl s) $
+                fmap (first unreflect <$>)
+                  .** on checkMultEQ . fmap . mkReflected
 
-        checkRowEQ' r r' = ReaderT $ \s ->
-          Ok $
-            reify (ReifiedEq $ runImpl s) $
-              liftA2 checkRowEQ (reflect r) (reflect r')
+        checkRowEQ' = ReaderT .* Ok .** slipr check
           where
-            reflect r p = bimap (mkReflected p) (mkReflected p) r
+            check s =
+              reify (ReifiedEq $ runImpl s) $
+                on checkRowEQ . join bimap . mkReflected
 
-        runImpl s l r = case runCtx s $ impl l r of
-          Ok _ -> True
-          Err _ -> False
+        runImpl = isOk .** slipl (runReaderT .* impl)
 
         variety = \case
           PArrow _ _ -> VArrow
@@ -256,27 +255,27 @@ checkEQ l r = mapErr NonEmpty.fromList . mapCtx (,HashSet.empty) $ impl l r
       k <- fromKinding (synthesizeKind l)
       mGuard . not $ isPath l && isPath r
       case k of
-        Type -> extEq (LDat mempty) (LMul mempty) l r
-        Simple (_ :*: _) -> extEq (LFst mempty) (LSnd mempty) l r
-        _ :**: _ -> extEq (LFst mempty) (LSnd mempty) l r
+        Type -> extEq (`LDat` mempty) (`LMul` mempty) l r
+        Simple (_ :*: _) -> extEq (`LFst` mempty) (`LSnd` mempty) l r
+        _ :**: _ -> extEq (`LFst` mempty) (`LSnd` mempty) l r
         _ -> emptyErr
       where
         extEq fst snd l r = do
           let parts = liftA2 (liftA2 (,)) (elam . fst) (elam . snd)
               elam = fromKinding . eval . Fix . TLam
-          ((lf, ls), (rf, rs)) <- liftA2 (,) (parts l) (parts r)
+          ((lf, ls), (rf, rs)) <- on (liftA2 (,)) parts l r
           impl lf rf *> impl ls rs
 
-        isPath (Fix t) = case t of
+        isPath = foldFix $ \case
           TType _ _ -> False
           TLam t -> case t of
             LVar _ -> True
-            LApp _ f _ -> isPath f
-            LMap _ f _ -> isPath f
-            LFst _ p -> isPath p
-            LSnd _ p -> isPath p
-            LDat _ t -> isPath t
-            LMul _ t -> isPath t
+            LApp f _ _ -> f
+            LMap f _ _ -> f
+            LFst p _ -> p
+            LSnd p _ -> p
+            LDat t _ -> t
+            LMul t _ -> t
             _ -> False
           _ -> True
 
@@ -298,9 +297,9 @@ unfoldMuPath = fmap eval . substitutePath
   where
     substitutePath (Fix t) = case t of
       TLam t -> case t of
-        LFix p k t ->
-          Just . flip substitute t . SubWith . Fix . TLam $ LFix p k t
-        LFst p t -> Fix . TLam . LFst p <$> substitutePath t
-        LSnd p t -> Fix . TLam . LSnd p <$> substitutePath t
+        LFix k t p ->
+          Just . flip substitute t . SubWith . Fix . TLam $ LFix k t p
+        LFst t p -> Fix . TLam . flip LFst p <$> substitutePath t
+        LSnd t p -> Fix . TLam . flip LSnd p <$> substitutePath t
         _ -> Nothing
       t -> Nothing

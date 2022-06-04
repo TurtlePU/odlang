@@ -72,17 +72,17 @@ var = lam . LVar
 
 labs k = lam . LAbs k
 
-lapp = curry $ lam . uncurry (LApp mempty)
+lapp = curry $ lam . (\(f, x) -> LApp f x mempty)
 
-mu k = lam . LFix mempty k
+mu k = lam . flip (LFix k) mempty
 
 lid = flip labs $ var 0
 
-lfst = lam . LFst mempty
+lfst = lam . flip LFst mempty
 
 pair = lam . uncurry LPair
 
-dat = Fix . TData mempty
+dat = Fix . flip TData mempty
 
 arr d c = dat $ PArrow d c
 
@@ -92,17 +92,17 @@ record = spread CAnd
 
 unit = record $ remp Type
 
-row = Fix . TRow mempty . Join . Biff . FreeBi
+row = Fix . flip TRow mempty . Join . Biff . FreeBi
 
 remp = row . Free . Ap2 . REmpty
 
-mul = Fix . TMul mempty . FreeBi
+mul = Fix . flip TMul mempty . FreeBi
 
 mlit = mul . Free . Ap2 . MLit . uncurry MultLit
 
 reg = mlit (False, False)
 
-ty d m = Fix . TType mempty $ TLit d m
+ty d m = Fix . flip TType mempty $ TLit d m
 
 unit' = ty unit reg
 

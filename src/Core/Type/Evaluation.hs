@@ -5,6 +5,7 @@ module Core.Type.Evaluation where
 
 import Control.Applicative (Applicative (liftA2))
 import Control.Category ((<<<))
+import Control.Composition ((.*), (.@))
 import Control.Monad ((<=<))
 import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (Ap2 (..), FreeBi (..))
@@ -14,103 +15,112 @@ import Core.Type.Syntax
 import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..), foldFix)
+import Data.Function (on)
+import Data.Function.Slip (slipl, slipr)
 import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (Identity))
 
 eval :: Term -> KindingResult Term
 eval = foldFix $ \case
-  TMul p t -> fmap (lowerMult p <<< liftMult <=< id) (sequence t)
-  TRow p t -> fmap (lowerRow p <<< liftRow <=< runBiff <<< runJoin) (sequence t)
-  TType p t -> Fix . TType p <$> sequence t
-  TData p t ->
-    Fix . TData p <$> case t of
+  TMul t p -> fmap (flip lowerMult p <<< liftMult <=< id) (sequence t)
+  TRow t p ->
+    fmap (flip lowerRow p <<< liftRow <=< runBiff <<< runJoin) (sequence t)
+  TType t p -> Fix . flip TType p <$> sequence t
+  TData t p ->
+    Fix . flip TData p <$> case t of
       PForall k t -> PForall k <$> mapCtx (k :) t
       d -> sequence d
   TLam t -> case t of
     LAbs k t -> Fix . TLam . LAbs k <$> mapCtx (k :) t
-    LFix p k t -> Fix . TLam . LFix p k <$> mapCtx (Simple k :) t
+    LFix k t p -> Fix . TLam . flip (LFix k) p <$> mapCtx (Simple k :) t
     t -> sequence t >>= apply
   where
-    lowerMult p = \case
-      FreeBi (Pure t) -> t
-      t -> Fix (TMul p t)
+    lowerMult = \case
+      FreeBi (Pure t) -> const t
+      t -> Fix . TMul t
 
-    lowerRow p = \case
-      FreeBi (Pure (Identity t)) -> t
-      t -> Fix (TRow p (Join (Biff t)))
+    lowerRow = \case
+      FreeBi (Pure (Identity t)) -> const t
+      t -> Fix . TRow (Join $ Biff t)
 
     apply :: LambdaF Term -> KindingResult Term
     apply = \case
-      LApp _ (Fix (TLam (LAbs _ t))) x -> eval $ substitute (SubWith x) t
-      LFst _ (Fix (TLam (LSPair _ x _))) -> pure x
-      LFst _ (Fix (TLam (LPair x _))) -> pure x
-      LSnd _ (Fix (TLam (LSPair _ _ x))) -> pure x
-      LSnd _ (Fix (TLam (LPair _ x))) -> pure x
-      LDat _ (Fix (TType _ (TLit d _))) -> pure d
-      LMul _ (Fix (TType _ (TLit _ m))) -> pure m
-      LMap p f (Fix (TLam (LMap q g x))) -> do
-        h <- compose p f g
-        apply $ LMap (p <> q) h x
-      LMap p f (Fix (TRow q (Join (Biff (FreeBi (Free (Ap2 r))))))) ->
-        Fix . TRow (p <> q) . Join . Biff . FreeBi . Free . Ap2 <$> case r of
-          REmpty _ -> REmpty . snd <$> (synthesizeKind f >>= pullArrow p)
-          REntry (k, v) -> REntry . (k,) <$> apply (LApp p f v)
-          RJoin l r -> liftA2 RJoin (recur l) (recur r)
-            where
-              recur = fmap (runFreeBi . liftRow . Identity) . apply . wrapRow
-              wrapRow = LMap p f . lowerRow q . FreeBi
-      LRnd p (Fix (TLam (LMap q f r))) -> apply (LRnd p r) >>= apply . LApp q f
-      LRnd p (Fix (TRow q (Join (Biff (FreeBi (Free (Ap2 r))))))) -> case r of
-        REmpty k -> pure . Fix . TLam . LRnd p . Fix $ wrapKind k
+      LApp (Fix (TLam (LAbs _ t))) x _ -> eval $ substitute (SubWith x) t
+      LFst (Fix (TLam (LSPair x _ _))) _ -> pure x
+      LFst (Fix (TLam (LPair x _))) _ -> pure x
+      LSnd (Fix (TLam (LSPair _ x _))) _ -> pure x
+      LSnd (Fix (TLam (LPair _ x))) _ -> pure x
+      LDat (Fix (TType (TLit d _) _)) _ -> pure d
+      LMul (Fix (TType (TLit _ m) _)) _ -> pure m
+      LMap f (Fix (TLam (LMap g x q))) p -> do
+        h <- compose f g p
+        apply $ LMap h x (p <> q)
+      LMap f (Fix (TRow (Join (Biff (FreeBi (Free (Ap2 r))))) q)) p ->
+        Fix . flip TRow (p <> q) . Join . Biff . FreeBi . Free . Ap2
+          <$> case r of
+            REmpty _ -> REmpty . snd <$> (synthesizeKind f >>= flip pullArrow p)
+            REntry (k, v) -> REntry . (k,) <$> apply (LApp f v p)
+            RJoin l r -> on (liftA2 RJoin) recur l r
+              where
+                recur = fmap (runFreeBi . liftRow . Identity) . apply . wrapRow
+                wrapRow = flip (LMap f) p . flip lowerRow q . FreeBi
+      LRnd (Fix (TLam (LMap f r q))) p ->
+        apply (LRnd r p) >>= apply . flip (LApp f) q
+      LRnd (Fix (TRow (Join (Biff (FreeBi (Free (Ap2 r))))) q)) p -> case r of
+        REmpty k -> pure . Fix . TLam . flip LRnd p . Fix $ wrapKind k
           where
-            wrapKind = TRow q . Join . Biff . FreeBi . Free . Ap2 . REmpty
+            wrapKind = flip TRow q . Join . Biff . FreeBi . Free . Ap2 . REmpty
         REntry (_, v) -> pure v
-        RJoin l r -> liftA2 unifier (recur l) (recur r)
+        RJoin l r -> on (liftA2 unifier) recur l r
           where
-            recur = apply . LRnd p . lowerRow q . FreeBi
+            recur = apply . flip LRnd p . flip lowerRow q . FreeBi
             unifier _ _ = error "most-precise-unifier is not defined"
       t -> pure . Fix $ TLam t
 
-    compose p f g = do
-      (kx, _) <- synthesizeKind g >>= pullArrow p
-      g' <- apply . LApp p (shift 1 g) . Fix . TLam $ LVar 0
-      f' <- apply $ LApp p (shift 1 f) g'
+    compose f g p = do
+      (kx, _) <- synthesizeKind g >>= flip pullArrow p
+      g' <- apply . flip (LApp $ shift 1 g) p . Fix . TLam $ LVar 0
+      f' <- apply $ LApp (shift 1 f) g' p
       pure . Fix . TLam $ LAbs kx f'
 
 liftMult = \case
-  Fix (TMul _ t) -> t
+  Fix (TMul t _) -> t
   t -> FreeBi (Pure t)
 
 liftRow = \case
-  Identity (Fix (TRow _ (Join (Biff t)))) -> t
+  Identity (Fix (TRow (Join (Biff t)) _)) -> t
   t -> FreeBi (Pure t)
 
-newtype Substitution = SubWith Term
+newtype Substitution = SubWith {unSub :: Term}
 
 substitute :: Substitution -> Term -> Term
-substitute (SubWith t) = shift (-1) . replace 0 (shift 1 t)
+substitute = shift (-1) .* slipl replace 0 . SubWith . shift 1 . unSub
   where
-    replace i t (Fix b) = case b of
-      TData p d -> Fix . TData p $ case d of
-        PForall k b -> PForall k $ replace (i + 1) t b
-        d -> replace i t <$> d
+    replace (SubWith t) = foldFix $ \case
+      TData d p ->
+        Fix . flip TData p . case d of
+          PForall k b -> PForall k . b . (+ 1)
+          d -> sequence d
       TLam b -> case b of
-        LVar j | i == j -> t
-        LAbs k b -> Fix . TLam . LAbs k $ replace (i + 1) t b
-        LFix p k b -> Fix . TLam . LFix p k $ replace (i + 1) t b
-        b -> Fix . TLam $ replace i t <$> b
-      b -> Fix $ replace i t <$> b
+        LVar j -> \i -> if i == j then t else Fix . TLam $ LVar j
+        LAbs k b -> Fix . TLam . LAbs k . b . (+ 1)
+        LFix k b p -> Fix . TLam . flip (LFix k) p . b . (+ 1)
+        b -> Fix . TLam <$> sequence b
+      b -> Fix <$> sequence b
+
+newtype Inc = Inc Int
 
 shift :: Int -> Term -> Term
-shift = shift' 0
+shift = slipl shift' 0 . Inc
   where
-    shift' lo inc (Fix t) = Fix $ case t of
-      TData p d -> TData p $ case d of
-        PForall k t -> PForall k $ shift' (lo + 1) inc t
-        d -> shift' lo inc <$> d
-      TLam t -> TLam $ case t of
-        LVar i | i >= lo -> LVar $ i + inc
-        LAbs k t -> LAbs k $ shift' (lo + 1) inc t
-        LFix p k t -> LFix p k $ shift' (lo + 1) inc t
-        t -> shift' lo inc <$> t
-      t -> shift' lo inc <$> t
+    shift' :: Inc -> Term -> Int -> Term
+    shift' (Inc inc) = foldFix $ Fix .* \case
+      TData d p -> flip TData p . case d of
+        PForall k t -> PForall k . t . (+ 1)
+        d -> sequence d
+      TLam t -> TLam . case t of
+        LVar i -> LVar . (i +) . \lo -> if i >= lo then inc else 0
+        LAbs k t -> LAbs k . t . (+ 1)
+        LFix k t p -> flip (LFix k) p . t . (+ 1)
+        t -> sequence t
+      t -> sequence t

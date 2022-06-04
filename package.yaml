@@ -21,6 +21,8 @@ description:         Please see the README on GitHub at <https://github.com/Turt
 
 dependencies:
 - base >= 4.7 && < 5
+- composition-prelude
+- composition-extra
 - array
 - hashable
 - unordered-containers

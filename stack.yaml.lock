@@ -5,6 +5,13 @@
 
 packages:
 - completed:
+    hackage: composition-prelude-3.0.0.2@sha256:1ffed216bd28d810fce0b5be83a661e2a892696d73b3f8de5c0f5edb9b5f0090,1216
+    pantry-tree:
+      size: 284
+      sha256: 94fc1c55e9065ae575315ac52a552d0e03beaefef4669a58a9745c6d71b4dd6b
+  original:
+    hackage: composition-prelude-3.0.0.2@sha256:1ffed216bd28d810fce0b5be83a661e2a892696d73b3f8de5c0f5edb9b5f0090,1216
+- completed:
     hackage: monoidal-containers-0.6.0.1@sha256:f56ea8fe91ff93da140e38b8dab4b94437b901818c13ba72fc7fc802290323ee,2583
     pantry-tree:
       size: 569

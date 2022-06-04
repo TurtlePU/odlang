@@ -3,6 +3,7 @@
 
 module Core.Term.Syntax where
 
+import Control.Composition ((.*), (.@))
 import Core.Type (Kind, RowKey)
 import Data.Array.ST (MArray (newArray), readArray, runSTArray, writeArray)
 import Data.Array.Unboxed (Array)
@@ -21,7 +22,7 @@ direct DRight = Right
 type Split2 = [Direction2]
 
 (!!!) :: [a] -> Split2 -> ([a], [a])
-xs !!! ss = partitionEithers $ zipWith direct ss xs
+(!!!) = partitionEithers .* flip (zipWith direct)
 
 type SplitN = [Int]
 
@@ -33,10 +34,10 @@ xs !*! ss = runSTArray $ do
     writeArray arr i (x : xs)
   pure arr
 
-newtype Refinement = Refine [Int]
+newtype Refinement = Refine {runRefine :: [Int]}
 
 (***) :: [a] -> Refinement -> [a]
-xs *** Refine rs = concat $ zipWith replicate rs xs
+(***) = concat .* runRefine .@ flip (zipWith replicate)
 
 ------------------------------------ ROWBAG ------------------------------------
 

@@ -1,15 +1,12 @@
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Core.Term.Syntax where
 
-import Core.Type
+import Core.Type (Kind, RowKey)
 import Data.Array.ST (MArray (newArray), readArray, runSTArray, writeArray)
 import Data.Array.Unboxed (Array)
-import Data.Bifoldable (Bifoldable (..))
-import Data.Bifunctor (Bifunctor (..))
-import Data.Bitraversable (Bitraversable (..))
+import Data.Bifunctor.TH
 import Data.Either (partitionEithers)
 import Data.Foldable (for_)
 
@@ -18,9 +15,8 @@ import Data.Foldable (for_)
 data Direction2 = DLeft | DRight
 
 direct :: Direction2 -> a -> Either a a
-direct = \case
-  DLeft -> Left
-  DRight -> Right
+direct DLeft = Left
+direct DRight = Right
 
 type Split2 = [Direction2]
 
@@ -103,47 +99,6 @@ data TermF tled term
       }
   deriving (Functor, Foldable, Traversable)
 
-instance Bifunctor TermF where
-  bimap f g = \case
-    TVar -> TVar
-    TAbs {..} ->
-      TAbs {argTy = f argTy, absBody = g absBody, absMult = f absMult, ..}
-    TApp {..} -> TApp {appFun = g appFun, appArg = g appArg, ..}
-    TGen {..} -> TGen {genBody = g genBody, genMult = f genMult, ..}
-    TInst {..} -> TInst {instFun = g instFun, instArg = f instArg}
-    TAndI {..} -> TAndI {andBag = fmap g andBag, andMult = f andMult, ..}
-    TAndE {..} -> TAndE {letArg = g letArg, letBody = g letBody, ..}
-    TWithI {..} ->
-      TWithI {withBag = fmap (second g) withBag, withMult = f withMult}
-    TWithE {..} -> TWithE {punArg = g punArg, ..}
-    TOrI {..} ->
-      TOrI {orValue = g orValue, orRow = f orRow, orMult = f orMult, ..}
-    TOrE {..} -> TOrE {casesArg = g casesArg, cases = fmap (second g) cases, ..}
-
-instance Bifoldable TermF where
-  bifoldMap f g = \case
-    TVar -> mempty
-    TAbs t _ b m -> f t <> g b <> f m
-    TApp h _ x -> g h <> g x
-    TGen _ b m -> g b <> f m
-    TInst h a -> g h <> f a
-    TAndI b _ m -> foldMap g b <> f m
-    TAndE a _ _ b -> g a <> g b
-    TWithI b m -> foldMap (g . snd) b <> f m
-    TWithE w _ -> g w
-    TOrI _ v r m -> g v <> f r <> f m
-    TOrE o _ c -> g o <> foldMap (g . snd) c
-
-instance Bitraversable TermF where
-  bitraverse f g = \case
-    TVar -> pure TVar
-    TAbs t c b m -> TAbs <$> f t <*> pure c <*> g b <*> f m
-    TApp h s x -> TApp <$> g h <*> pure s <*> g x
-    TGen k b m -> TGen k <$> g b <*> f m
-    TInst h a -> TInst <$> g h <*> f a
-    TAndI b s m -> TAndI <$> traverse g b <*> pure s <*> f m
-    TAndE a o s b -> TAndE <$> g a <*> pure o <*> pure s <*> g b
-    TWithI b m -> TWithI <$> traverse (traverse g) b <*> f m
-    TWithE w k -> TWithE <$> g w <*> pure k
-    TOrI k v r m -> TOrI k <$> g v <*> f r <*> f m
-    TOrE o s c -> TOrE <$> g o <*> pure s <*> traverse (traverse g) c
+$(deriveBifunctor ''TermF)
+$(deriveBifoldable ''TermF)
+$(deriveBitraversable ''TermF)

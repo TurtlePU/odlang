@@ -35,9 +35,7 @@ library
       Core.Type.Kinding
       Core.Type.Result
       Core.Type.Syntax
-      Data.Bifunctor.Ap2
       Data.EqBag
-      Data.Functor.Ap
       Data.Position
       Data.Reflection.Instances
       Lib
@@ -50,6 +48,7 @@ library
     , base >=4.7 && <5
     , bifunctors
     , data-fix
+    , deriving-compat
     , free
     , hashable
     , lattices
@@ -71,6 +70,7 @@ executable odlang-exe
     , base >=4.7 && <5
     , bifunctors
     , data-fix
+    , deriving-compat
     , free
     , hashable
     , lattices
@@ -96,6 +96,7 @@ test-suite odlang-test
     , base >=4.7 && <5
     , bifunctors
     , data-fix
+    , deriving-compat
     , free
     , hashable
     , lattices

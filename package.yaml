@@ -31,6 +31,7 @@ dependencies:
 - bifunctors
 - lattices
 - reflection
+- deriving-compat
 
 library:
   source-dirs: src

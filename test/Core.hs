@@ -1,13 +1,12 @@
 module Core (core) where
 
 import Control.Monad.Free (Free (..))
-import Control.Monad.FreeBi (FreeBi (..))
+import Control.Monad.FreeBi (Ap2 (..), FreeBi (..))
 import Control.Monad.Result (Result (..), runCtx)
 import Core.Type.Equivalence (checkEQ)
 import Core.Type.Evaluation (Substitution (..), eval, substitute)
 import Core.Type.Kinding (synthesizeKind)
 import Core.Type.Syntax
-import Data.Bifunctor.Ap2 (Ap2 (..))
 import Data.Bifunctor.Biff (Biff (..))
 import Data.Bifunctor.Join (Join (..))
 import Data.Fix (Fix (..))

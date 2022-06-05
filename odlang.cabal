@@ -28,6 +28,7 @@ library
       Control.Monad.FreeBi
       Control.Monad.Result
       Core.Term.Syntax
+      Core.Term.Typing
       Core.Type
       Core.Type.Contract
       Core.Type.Equivalence

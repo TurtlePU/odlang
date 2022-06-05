@@ -91,9 +91,9 @@ liftRow = \case
   Identity (Fix (TRow (Join (Biff t)) _)) -> t
   t -> FreeBi (Pure t)
 
-newtype Substitution = SubWith {unSub :: Term}
+newtype Substitution a = SubWith {unSub :: a}
 
-substitute :: Substitution -> Term -> Term
+substitute :: Substitution Term -> Term -> Term
 substitute = shift (-1) .* slipl replace 0 . SubWith . shift 1 . unSub
   where
     replace (SubWith t) = foldFix $ \case

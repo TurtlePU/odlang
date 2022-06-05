@@ -4,9 +4,11 @@
 module Core.Term.Syntax where
 
 import Control.Composition ((.*), (.@))
-import Core.Type (Kind, RowKey)
+import Core.Type (Kind, RowKey, TL)
+import Data.Array (Array)
 import Data.Array.ST (MArray (newArray), readArray, runSTArray, writeArray)
-import Data.Array.Unboxed (Array)
+import Data.Bifunctor (Bifunctor (..))
+import Data.Bifunctor.Fix (Fix (..))
 import Data.Bifunctor.TH
 import Data.Either (partitionEithers)
 import Data.Foldable (for_)
@@ -36,17 +38,17 @@ xs !*! ss = runSTArray $ do
 
 newtype Refinement = Refine {runRefine :: [Int]}
 
-(***) :: [a] -> Refinement -> [a]
-(***) = concat .* runRefine .@ flip (zipWith replicate)
+(***) :: Refinement -> [a] -> [a]
+(***) = concat .* zipWith replicate . runRefine
 
 ------------------------------------ ROWBAG ------------------------------------
 
-newtype RowBag a = MkBag (Array Int (RowKey, a))
+newtype RowBag a = MkBag {unBag :: Array Int (RowKey, a)}
   deriving (Functor, Foldable, Traversable)
 
 ------------------------------------ TERMS -------------------------------------
 
-data TermF tled term
+data TermF term tled
   = TVar
   | TAbs
       { argTy :: tled,
@@ -103,3 +105,8 @@ data TermF tled term
 $(deriveBifunctor ''TermF)
 $(deriveBifoldable ''TermF)
 $(deriveBitraversable ''TermF)
+
+type Term = Fix TermF TL
+
+foldFix :: Bifunctor p => (p t a -> t) -> Fix p a -> t
+foldFix = (.) <*> out .@ first . foldFix

@@ -1,10 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Core.Type where
 
 import Control.Applicative (Applicative (..))
 import Control.Arrow ((<<<), (>>>))
-import Control.Composition ((-.), (.*), (.**), (.@), (.@@), (<-=*<))
+import Control.Composition (between, (-.), (.*), (.**), (.@), (.@@), (<-=*<))
 import Control.Monad ((<=<), (>=>))
 import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (Ap2 (..), FreeBi (..))
@@ -13,6 +14,7 @@ import Control.Monad.Result
 import Core.Type.Contract (WellFormed (..))
 import qualified Core.Type.Contract as Contract
 import qualified Core.Type.Equivalence as Equivalence
+import Core.Type.Evaluation (Substitution (..))
 import qualified Core.Type.Evaluation as Evaluation
 import qualified Core.Type.Kinding as Kinding
 import Core.Type.Result (TypeResult)
@@ -42,6 +44,14 @@ type TL = Contract.WellFormed
 
 wellFormed :: Malformed -> Position -> TypeResult Contract.ContractError TL
 wellFormed = Contract.wellFormed
+
+shift :: Int -> TL -> TL
+shift = between MkWF unWF . Evaluation.shift
+
+subst :: Substitution TL -> TL -> Kinding.KindingResult TL
+subst =
+  fmap MkWF .* Evaluation.eval .* unWF
+    .@ Evaluation.substitute . SubWith . unWF . unSub
 
 ------------------------------- KINDING FRONTEND -------------------------------
 
@@ -82,6 +92,18 @@ multAdmitting = MkWF .* Fix .* TMul . FreeBi . Free . Ap2 . MLit . body
 
 type Row = TL
 
+data RowKey = KLit EntryKey | KRest
+
+mkRow :: Foldable f => Kind -> f (RowKey, TL) -> Position -> Row
+mkRow =
+  MkWF .** Fix .** TRow .* Join .* Biff .* FreeBi
+    .* foldr (Free .* Ap2 .* RJoin . uncurry entry) . Free . Ap2 . REmpty
+  where
+    entry :: RowKey -> TL -> Free (Ap2 RowF (EntryKey, Term)) (Identity Term)
+    entry = \case
+      KLit k -> Free . Ap2 . REntry . (k,) . unWF
+      KRest -> Pure . Identity . error "TODO: cancel rounding"
+
 data RowRepr = MkRepr
   { reLit :: MonoidalHashMap EntryKey (NonEmpty TL),
     reVar :: [TL]
@@ -98,8 +120,6 @@ rowRepr = bifoldMap (uncurry entry) var . Evaluation.liftRow . Identity . unWF
   where
     var = MkRepr mempty . pure . MkWF . runIdentity
     entry = flip MkRepr mempty .* MkWF .@ pure .@ MonoidalHashMap.singleton
-
-data RowKey = KLit EntryKey | KRest
 
 data KeyError
   = KKind Kinding.KindingError
@@ -125,7 +145,7 @@ getEntry = \case
 
 --------------------------- CONSTRUCTORS AND GETTERS ---------------------------
 
-mktype :: DataF Type -> Mult -> Position -> Type
+mktype :: DataF TL -> Mult -> Position -> Type
 mktype =
   MkWF .** Fix .** (TType =<<)
     .* slipr (unWF .@@ TLit .* Fix .* (unWF <$>) .@ flip TData)

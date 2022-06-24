@@ -5,7 +5,7 @@ module Core.Type.Evaluation where
 
 import Control.Applicative (Applicative (liftA2))
 import Control.Category ((<<<))
-import Control.Composition ((.*), (.@))
+import Control.Composition
 import Control.Monad ((<=<))
 import Control.Monad.Free (Free (..))
 import Control.Monad.FreeBi (Ap2 (..), FreeBi (..))
@@ -59,19 +59,18 @@ eval = foldFix $ \case
         Fix . flip TRow (p <> q) . Join . Biff . FreeBi . Free . Ap2
           <$> case r of
             REmpty _ -> REmpty . snd <$> (synthesizeKind f >>= flip pullArrow p)
-            REntry (k, v) -> REntry . (k,) <$> apply (LApp f v p)
-            RJoin l r -> on (liftA2 RJoin) recur l r
-              where
-                recur = fmap (runFreeBi . liftRow . Identity) . apply . wrapRow
-                wrapRow = flip (LMap f) p . flip lowerRow q . FreeBi
+            RCons (k, v) r ->
+              liftA2
+                (Identity .@ liftRow .@ runFreeBi .@ RCons . (k,))
+                (apply $ LApp f v p)
+                (apply $ LMap f (lowerRow (FreeBi r) q) p)
       LRnd (Fix (TLam (LMap f r q))) p ->
         apply (LRnd r p) >>= apply . flip (LApp f) q
       LRnd (Fix (TRow (Join (Biff (FreeBi (Free (Ap2 r))))) q)) p -> case r of
         REmpty k -> pure . Fix . TLam . flip LRnd p . Fix $ wrapKind k
           where
             wrapKind = flip TRow q . Join . Biff . FreeBi . Free . Ap2 . REmpty
-        REntry (_, v) -> pure v
-        RJoin l r -> on (liftA2 unifier) recur l r
+        RCons (_, v) r -> unifier v <$> recur r
           where
             recur = apply . flip LRnd p . flip lowerRow q . FreeBi
             unifier _ _ = error "most-precise-unifier is not defined"
@@ -114,13 +113,17 @@ shift :: Int -> Term -> Term
 shift = slipl shift' 0 . Inc
   where
     shift' :: Inc -> Term -> Int -> Term
-    shift' (Inc inc) = foldFix $ Fix .* \case
-      TData d p -> flip TData p . case d of
-        PForall k t -> PForall k . t . (+ 1)
-        d -> sequence d
-      TLam t -> TLam . case t of
-        LVar i -> LVar . (i +) . \lo -> if i >= lo then inc else 0
-        LAbs k t -> LAbs k . t . (+ 1)
-        LFix k t p -> flip (LFix k) p . t . (+ 1)
-        t -> sequence t
-      t -> sequence t
+    shift' (Inc inc) =
+      foldFix $
+        Fix .* \case
+          TData d p ->
+            flip TData p . case d of
+              PForall k t -> PForall k . t . (+ 1)
+              d -> sequence d
+          TLam t ->
+            TLam . case t of
+              LVar i -> LVar . (i +) . \lo -> if i >= lo then inc else 0
+              LAbs k t -> LAbs k . t . (+ 1)
+              LFix k t p -> flip (LFix k) p . t . (+ 1)
+              t -> sequence t
+          t -> sequence t

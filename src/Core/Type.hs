@@ -97,12 +97,10 @@ data RowKey = KLit EntryKey | KRest
 mkRow :: Foldable f => Kind -> f (RowKey, TL) -> Position -> Row
 mkRow =
   MkWF .** Fix .** TRow .* Join .* Biff .* FreeBi
-    .* foldr (Free .* Ap2 .* RJoin . uncurry entry) . Free . Ap2 . REmpty
-  where
-    entry :: RowKey -> TL -> Free (Ap2 RowF (EntryKey, Term)) (Identity Term)
-    entry = \case
-      KLit k -> Free . Ap2 . REntry . (k,) . unWF
-      KRest -> Pure . Identity . error "TODO: cancel rounding"
+    .* foldr (uncurry (\(KLit k) -> Free .* Ap2 .* RCons . (k,) . unWF))
+      . Free
+      . Ap2
+      . REmpty
 
 data RowRepr = MkRepr
   { reLit :: MonoidalHashMap EntryKey (NonEmpty TL),

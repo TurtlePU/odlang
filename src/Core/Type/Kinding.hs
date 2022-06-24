@@ -15,7 +15,7 @@ import Data.Fix (foldFix)
 import Data.Foldable (for_)
 import Data.Functor (($>))
 import Data.Functor.Identity (Identity (..))
-import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty (NonEmpty (..), (<|))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Position (Position)
 
@@ -68,8 +68,7 @@ synthesizeKind = foldFix $ \case
     where
       fold = \case
         REmpty k -> pure . pure $ Row k
-        REntry (_, v) -> pure $ Row <$> v
-        RJoin l r -> l <> r
+        RCons (_, v) r -> fmap Row v <| r
   TType (TLit d m) p ->
     intoCheck (Simple Data) d p *> intoCheck Mult m p $> Type
   TData t p -> case t of

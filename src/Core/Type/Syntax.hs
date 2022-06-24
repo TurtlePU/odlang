@@ -5,7 +5,7 @@
 module Core.Type.Syntax where
 
 import Algebra.Lattice (BoundedLattice, Lattice (..), fromBool)
-import Control.Composition ((.*), (.@), (.@@), (.@@@))
+import Control.Composition
 import Control.Monad (join)
 import Control.Monad.FreeBi (FreeBi, iter)
 import Data.Bifunctor (Bifunctor (..))
@@ -88,8 +88,7 @@ type MultTerm = FreeBi MultF MultLit
 
 data RowF e r
   = REmpty ProperKind
-  | REntry e
-  | RJoin r r
+  | RCons e r
   deriving (Generic1, Functor, Foldable, Traversable, Generic, Eq, Show)
 
 $(deriveBifunctor ''RowF)
